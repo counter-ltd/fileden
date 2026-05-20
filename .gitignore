@@ -1,0 +1,44 @@
+# Build artifacts
+.build/
+build/
+DerivedData/
+*.o
+*.swiftmodule
+*.swiftdoc
+*.swiftsourceinfo
+
+# SwiftPM
+Package.resolved
+.swiftpm/
+Packages/
+
+# Xcode
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# App-specific
+*.app
+*.dmg
+*.zip
+
+# Logs
+*.log
