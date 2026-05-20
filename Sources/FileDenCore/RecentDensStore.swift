@@ -47,7 +47,8 @@ public final class RecentDensStore {
     public func record(urls: [URL]) {
         let paths = urls.map(\.path).filter { !$0.isEmpty }
         guard !paths.isEmpty else { return }
-        var list = all
+        let key = Set(paths)
+        var list = all.filter { Set($0.paths) != key }
         list.insert(RecentDen(paths: paths), at: 0)
         all = list
     }

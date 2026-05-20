@@ -95,6 +95,9 @@ struct ShelfView: View {
                 items = initialURLs.map { ShelfItem(url: $0) }
             }
             onEmpty? {
+                if !items.isEmpty {
+                    RecentDensStore.shared.record(urls: items.map(\.url))
+                }
                 withAnimation(.spring(duration: 0.3)) {
                     items.removeAll()
                     isExpanded = false
@@ -114,8 +117,8 @@ struct ShelfView: View {
 
     private var compactView: some View {
         ZStack {
-            VStack(spacing: 6) {
-                grabHandle.padding(.top, 10)
+            VStack(spacing: 0) {
+                grabHandle.padding(.top, 8)
                 Spacer(minLength: 0)
                 dropZone
                 Spacer(minLength: 0)
@@ -126,8 +129,8 @@ struct ShelfView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .padding(.horizontal, 40)
+                        .padding(.bottom, 10)
                 }
-                Color.clear.frame(height: 36)
             }
 
             if !items.isEmpty {
@@ -135,7 +138,7 @@ struct ShelfView: View {
                     Spacer()
                     HStack {
                         Spacer()
-                        shareButton.padding(.trailing, 16).padding(.bottom, 16)
+                        shareButton.padding(.trailing, 10).padding(.bottom, 8)
                     }
                 }
             }
@@ -592,6 +595,7 @@ struct ShelfView: View {
         if items.isEmpty {
             onClose?()
         } else {
+            RecentDensStore.shared.record(urls: items.map(\.url))
             withAnimation(.spring(duration: 0.3)) {
                 items.removeAll()
                 isExpanded = false
@@ -600,6 +604,9 @@ struct ShelfView: View {
     }
 
     private func clearAll() {
+        if !items.isEmpty {
+            RecentDensStore.shared.record(urls: items.map(\.url))
+        }
         withAnimation(.spring(duration: 0.3)) {
             items.removeAll()
             isExpanded = false

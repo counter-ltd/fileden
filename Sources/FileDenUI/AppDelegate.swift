@@ -26,15 +26,18 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func handleStatusClick() {
-        guard let event = NSApp.currentEvent else { return }
+        guard let event = NSApp.currentEvent, let statusItem else { return }
         if event.type == .rightMouseUp {
             showSettings()
         } else {
-            showMainMenu()
+            let menu = buildMainMenu()
+            statusItem.menu = menu
+            statusItem.button?.performClick(nil)
+            statusItem.menu = nil
         }
     }
 
-    private func showMainMenu() {
+    private func buildMainMenu() -> NSMenu {
         let menu = NSMenu()
 
         let newDenItem = NSMenuItem()
@@ -93,17 +96,12 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
-        showMenu(menu)
-    }
-
-    private func showMenu(_ menu: NSMenu) {
-        guard let button = statusItem?.button else { return }
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: 0), in: button)
+        return menu
     }
 
     @objc private func newDen() {
         DispatchQueue.main.async {
-            DenManager.shared.newDen(placement: .center)
+            DenManager.shared.newDen(placement: .nearCursor)
         }
     }
 

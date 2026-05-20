@@ -42,7 +42,7 @@ public class DenManager {
             empty.show()
             return empty
         }
-        let controller = ShelfWindowController()
+        let controller = ShelfWindowController(initialURLs: [])
         dens.append(controller)
         positionWindow(for: controller, placement: placement)
         controller.show()

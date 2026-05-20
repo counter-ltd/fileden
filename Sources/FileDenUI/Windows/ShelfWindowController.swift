@@ -8,7 +8,7 @@ public class ShelfWindowController: NSWindowController {
     var isEmpty = true
     private var currentURLs: [URL] = []
 
-    convenience init(initialURLs: [URL] = []) {
+    convenience init(initialURLs: [URL]) {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 200, height: 200),
             styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
@@ -36,7 +36,11 @@ public class ShelfWindowController: NSWindowController {
             onURLsChanged: { [weak self] urls in self?.currentURLs = urls },
             initialURLs: initialURLs
         )
-        panel.contentView = NSHostingView(rootView: shelfView)
+        let hosting = NSHostingView(rootView: shelfView)
+        hosting.wantsLayer = true
+        hosting.layer?.cornerRadius = 24
+        hosting.layer?.masksToBounds = true
+        panel.contentView = hosting
         panel.center()
     }
 
