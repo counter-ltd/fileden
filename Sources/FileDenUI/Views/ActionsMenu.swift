@@ -87,6 +87,7 @@ enum FileActions {
         let allImages = urls.allSatisfy { isImage($0) } && !urls.isEmpty
         let allPrintable = urls.allSatisfy { isPrintable($0) } && !urls.isEmpty
         let allArchives = urls.allSatisfy { isArchive($0) } && !urls.isEmpty
+        let allPDFs = urls.allSatisfy { PDFTools.isPDF($0) } && !urls.isEmpty
 
         menu.addItem(item("Open", "arrow.up.forward.app",
                           #selector(ActionBridge.openItems), bridge))
@@ -121,6 +122,11 @@ enum FileActions {
         if allImages {
             menu.addItem(item("Set as Wallpaper", "photo.on.rectangle",
                               #selector(ActionBridge.wallpaper), bridge))
+            menu.addItem(item("Combine to PDF", "doc.badge.plus",
+                              #selector(ActionBridge.combinePDF), bridge))
+        }
+        if allPDFs {
+            menu.addItem(pdfToolsMenu(bridge: bridge, count: urls.count))
         }
 
         menu.addItem(.separator())
@@ -142,6 +148,29 @@ enum FileActions {
         i.target = target
         i.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         return i
+    }
+
+    /// "PDF Tools" submenu. Merge needs at least two documents; the rest apply
+    /// to any selection of PDFs. Results are staged into a new den.
+    private static func pdfToolsMenu(bridge: ActionBridge, count: Int) -> NSMenuItem {
+        let sub = NSMenu()
+        if count >= 2 {
+            sub.addItem(item("Merge PDFs", "square.stack.3d.up",
+                             #selector(ActionBridge.mergePDF), bridge))
+        }
+        sub.addItem(item("Split into Pages", "rectangle.split.3x1",
+                         #selector(ActionBridge.splitPDF), bridge))
+        sub.addItem(item("Export Pages as Images", "photo.stack",
+                         #selector(ActionBridge.exportPDFImages), bridge))
+        sub.addItem(item("Extract Images", "photo.badge.arrow.down",
+                         #selector(ActionBridge.extractPDFImages), bridge))
+        sub.addItem(item("Extract Text", "doc.plaintext",
+                         #selector(ActionBridge.extractPDFText), bridge))
+
+        let parent = NSMenuItem(title: "PDF Tools", action: nil, keyEquivalent: "")
+        parent.image = NSImage(systemSymbolName: "doc.richtext", accessibilityDescription: nil)
+        parent.submenu = sub
+        return parent
     }
 
     static func isImage(_ url: URL) -> Bool {
@@ -276,6 +305,28 @@ final class ActionBridge: NSObject {
         }
         if !removed.isEmpty {
             DispatchQueue.main.async { [onRemove] in onRemove(removed) }
+        }
+    }
+
+    // MARK: - PDF tools
+
+    @objc func mergePDF()        { runPDF(PDFTools.merge) }
+    @objc func splitPDF()        { runPDF(PDFTools.splitPages) }
+    @objc func exportPDFImages() { runPDF(PDFTools.exportPageImages) }
+    @objc func extractPDFImages(){ runPDF(PDFTools.extractImages) }
+    @objc func extractPDFText()  { runPDF(PDFTools.extractText) }
+    @objc func combinePDF()      { runPDF(PDFTools.combineToPDF) }
+
+    /// Run a PDF operation off the main thread, then stage whatever it produced
+    /// into a fresh den. Beeps if the operation yielded nothing.
+    private func runPDF(_ work: @escaping ([URL]) -> [URL]) {
+        let inputs = urls
+        DispatchQueue.global(qos: .userInitiated).async {
+            let outputs = work(inputs)
+            Task { @MainActor in
+                guard !outputs.isEmpty else { NSSound.beep(); return }
+                DenManager.shared.openDen(with: outputs)
+            }
         }
     }
 }

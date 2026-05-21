@@ -18,7 +18,10 @@ let package = Package(
             name: "FileDenUI",
             dependencies: ["FileDenCore"],
             path: "Sources/FileDenUI",
-            linkerSettings: [.linkedFramework("QuickLookThumbnailing")]
+            linkerSettings: [
+                .linkedFramework("QuickLookThumbnailing"),
+                .linkedFramework("PDFKit"),
+            ]
         ),
         .executableTarget(
             name: "FileDen",

@@ -40,7 +40,8 @@ Built in Swift + AppKit + SwiftUI for macOS 14+. No Electron, no background daem
 
 - **Multiple dens.** Spawn as many as you want — each is independent.
 - **Drag-out as multi-file.** One drag carries the whole stack.
-- **Smart actions menu.** Open, Quick Look, Reveal, Copy, Duplicate, Copy Path, Compress to ZIP, Unarchive, Print, Set as Wallpaper, Share, Move to Trash — surfaced based on file type.
+- **Smart actions menu.** Open, Quick Look, Reveal, Copy, Duplicate, Copy Path, Compress to ZIP, Unarchive, Print, Set as Wallpaper, Combine to PDF, Share, Move to Trash — surfaced based on file type.
+- **PDF tools.** Select PDFs and a *PDF Tools* submenu appears: merge, split into pages, export pages as images, extract embedded images, extract text. Results land in a fresh den, staged for you to drag wherever they belong.
 - **Notch drop.** Drag onto the notch (or its area on non-notch Macs) to open a fresh den below it.
 - **Mouse-shake to summon.** Wiggle the cursor; a new den appears near it.
 - **Global hotkey.** Default ⌥⇧D, fully rebindable.
@@ -83,7 +84,10 @@ The actions button (•••) replaces the share button and adapts to selection
 - Folders or multiple items → **Compress to ZIP**.
 - All archives → **Unarchive**.
 - All printable (pdf/img/txt/rtf) → **Print**.
-- All images → **Set as Wallpaper**.
+- All images → **Set as Wallpaper**, **Combine to PDF**.
+- All PDFs → **PDF Tools** ▸ Merge PDFs (2+), Split into Pages, Export Pages as Images, Extract Images, Extract Text.
+
+PDF tools run natively (PDFKit + CoreGraphics, no external binaries). Output is staged into a new den — nothing is written next to your originals until you drag it there.
 
 In the expanded view, the button label reflects context: *Actions*, *Actions: filename*, or *Actions (N)*.
 
