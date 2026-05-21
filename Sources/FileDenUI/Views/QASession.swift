@@ -2,34 +2,28 @@ import Foundation
 import AppKit
 import FileDenAI
 
-/// Drives the Ask window: indexes a den's documents in the background (with a
-/// `ProgressHUD`), retrieves the relevant passages for each question, and — when
-/// the on-device LLM is available and enabled — synthesizes a grounded, cited
-/// written answer over them. Mirrors the app's off-main tool pattern, exposing
-/// observable state to ``QAView``.
+/// Drives the Ask UI as a multi-turn chat over a den's documents: indexes them in
+/// the background, then runs each turn through ``DocumentChat`` (retrieve →
+/// synthesize, with a passages fallback that never dead-ends). Mirrors the app's
+/// off-main work pattern and publishes the transcript to ``QAView``.
 @MainActor
 final class QASession: ObservableObject {
     enum Phase: Equatable {
         case indexing
         case ready
-        case empty                 // nothing indexable
+        case empty
         case failed(String)
     }
 
     @Published private(set) var phase: Phase = .indexing
-    @Published private(set) var citations: [Citation] = []
-    @Published private(set) var answerText: String?       // synthesized prose, when produced
-    @Published private(set) var answerError: String?      // why synthesis failed, if it did
-    @Published private(set) var answerCitedIDs: Set<Int64> = []
-    @Published private(set) var isSearching = false        // retrieving passages
-    @Published private(set) var isAnswering = false        // LLM writing the answer
-    @Published private(set) var lastQuestion = ""
-    @Published private(set) var hasAsked = false
+    @Published private(set) var messages: [ChatMessage] = []
+    @Published private(set) var isBusy = false           // a turn is in flight
 
     let fileCount: Int
     private let urls: [URL]
     private var engine: AskEngine?
-    private var answerTask: Task<Void, Never>?
+    private var chat: DocumentChat?
+    private var turnTask: Task<Void, Never>?
     private let work = DispatchQueue(label: "ltd.anti.FileDen.ask", qos: .userInitiated)
 
     init(urls: [URL]) {
@@ -38,22 +32,9 @@ final class QASession: ObservableObject {
         startIndexing()
     }
 
-    // MARK: - Intelligence availability
-
-    /// Whether the on-device LLM can write answers right now.
-    var llmAvailable: Bool {
-        if #available(macOS 26, *) { return FoundationModelsAnswerProvider.isAvailable }
-        return false
-    }
-
-    /// Why the LLM isn't available (for the banner), or nil when it is.
-    var llmUnavailableNote: String? {
-        if #available(macOS 26, *) { return FoundationModelsAnswerProvider.unavailabilityReason }
-        return "Written answers need macOS 26 with Apple Intelligence."
-    }
-
-    /// True when this question will be answered in prose (vs. passages only).
-    var willSynthesize: Bool { FileDenSettings.shared.aiSynthesisEnabled && llmAvailable }
+    var hasMessages: Bool { !messages.isEmpty }
+    var llmAvailable: Bool { Intelligence.isAvailable }
+    var llmUnavailableNote: String? { Intelligence.unavailabilityReason }
 
     // MARK: - Indexing
 
@@ -72,6 +53,9 @@ final class QASession: ObservableObject {
                     hud.finish()
                     guard let self else { return }
                     self.engine = engine
+                    let supported = urls.filter { TextExtractor.canExtract($0) }
+                    self.chat = DocumentChat(documentURLs: supported,
+                                             retrieve: { query, k in engine.retrieve(query, topK: k) })
                     self.phase = engine.isReady ? .ready : .empty
                 }
             } catch {
@@ -84,65 +68,40 @@ final class QASession: ObservableObject {
         }
     }
 
-    // MARK: - Asking
+    // MARK: - Chatting
 
-    func ask(_ question: String) {
+    func send(_ question: String) {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !isSearching, !isAnswering, phase == .ready, let engine else { return }
+        guard !trimmed.isEmpty, !isBusy, phase == .ready, let chat else { return }
 
-        answerTask?.cancel()
-        lastQuestion = trimmed
-        hasAsked = true
-        isSearching = true
-        answerText = nil
-        answerError = nil
-        answerCitedIDs = []
-        citations = []
+        let history = messages
+        messages.append(ChatMessage(role: .user, text: trimmed))
+        let assistant = ChatMessage(role: .assistant, isStreaming: true)
+        messages.append(assistant)
+        let assistantID = assistant.id
+        isBusy = true
 
-        let synthesize = willSynthesize
-        work.async { [weak self] in
-            let results = engine.retrieve(trimmed)
-            Task { @MainActor in
-                guard let self else { return }
-                self.citations = results
-                self.isSearching = false
-                if synthesize, !results.isEmpty {
-                    self.synthesize(question: trimmed, citations: results)
+        let synthesize = FileDenSettings.shared.aiSynthesisEnabled
+        turnTask = Task { [weak self] in
+            for await event in chat.send(question: trimmed, history: history, synthesize: synthesize) {
+                if Task.isCancelled { return }
+                switch event {
+                case .citations(let citations):
+                    self?.update(assistantID) { $0.citations = citations }
+                case .partialText(let text):
+                    self?.update(assistantID) { $0.text = text }
+                case .completed(let text, _):
+                    self?.update(assistantID) { $0.text = text; $0.isStreaming = false }
                 }
             }
+            self?.update(assistantID) { $0.isStreaming = false }
+            self?.isBusy = false
         }
     }
 
-    private func synthesize(question: String, citations: [Citation]) {
-        guard #available(macOS 26, *) else { return }
-        isAnswering = true
-        answerError = nil
-        answerTask = Task { [weak self] in
-            do {
-                for try await event in FoundationModelsAnswerProvider.streamAnswer(question: question, citations: citations) {
-                    if Task.isCancelled { return }
-                    switch event {
-                    case .partialText(let text):
-                        self?.answerText = text
-                    case .completed(let answer):
-                        let trimmed = answer.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if trimmed.isEmpty {
-                            self?.answerText = nil
-                            self?.answerError = "The model didn't return an answer — showing the source passages below."
-                        } else {
-                            self?.answerText = answer.text
-                            self?.answerCitedIDs = Set(answer.citedIDs)
-                        }
-                    }
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                self?.answerText = nil
-                self?.answerError = "Couldn't generate a written answer — showing the source passages below."
-            }
-            self?.isAnswering = false
-        }
+    private func update(_ id: UUID, _ change: (inout ChatMessage) -> Void) {
+        guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
+        change(&messages[index])
     }
 
     private nonisolated static func message(for error: Error) -> String {

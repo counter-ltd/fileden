@@ -122,14 +122,11 @@ struct SettingsPopoverView: View {
     }
 
     private var llmStatus: (ok: Bool, detail: String) {
-        if #available(macOS 26, *) {
-            if FoundationModelsAnswerProvider.isAvailable {
-                return (true, "Answers are written on-device with Apple Intelligence. Retrieval and citations work regardless.")
-            }
-            return (false, FoundationModelsAnswerProvider.unavailabilityReason
-                    ?? "The on-device model is unavailable. Ask still finds and cites source passages.")
+        if Intelligence.isAvailable {
+            return (true, "Answers are written on-device with Apple Intelligence. Retrieval and citations work regardless.")
         }
-        return (false, "Written answers need macOS 26 with Apple Intelligence. Ask still finds and cites source passages.")
+        return (false, Intelligence.unavailabilityReason
+                ?? "The on-device model is unavailable. Ask still finds and cites source passages.")
     }
 
     private func openIntelligenceSettings() {

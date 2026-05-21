@@ -1,16 +1,15 @@
 // swift-tools-version: 5.10
 import PackageDescription
+import Foundation
 
-let package = Package(
-    name: "FileDen",
-    platforms: [.macOS(.v14)],
-    products: [
-        .library(name: "FileDenCore", targets: ["FileDenCore"]),
-        .library(name: "FileDenAI", targets: ["FileDenAI"]),
-        .library(name: "FileDenUI", targets: ["FileDenUI"]),
-        .executable(name: "FileDen", targets: ["FileDen"]),
-    ],
-    targets: [
+// Tests are kept local-only (Tests/ is gitignored), so include the test target
+// only when it's actually present — a fresh clone without it still builds.
+let testsPath = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()
+    .appendingPathComponent("Tests/FileDenAITests")
+let hasTests = FileManager.default.fileExists(atPath: testsPath.path)
+
+var targets: [Target] = [
         .target(
             name: "FileDenCore",
             path: "Sources/FileDenCore"
@@ -55,10 +54,26 @@ let package = Package(
             dependencies: ["FileDenCore", "FileDenAI", "FileDenUI"],
             path: "Sources/FileDen"
         ),
+]
+
+if hasTests {
+    targets.append(
         .testTarget(
             name: "FileDenAITests",
             dependencies: ["FileDenAI"],
             path: "Tests/FileDenAITests"
-        ),
-    ]
+        )
+    )
+}
+
+let package = Package(
+    name: "FileDen",
+    platforms: [.macOS(.v14)],
+    products: [
+        .library(name: "FileDenCore", targets: ["FileDenCore"]),
+        .library(name: "FileDenAI", targets: ["FileDenAI"]),
+        .library(name: "FileDenUI", targets: ["FileDenUI"]),
+        .executable(name: "FileDen", targets: ["FileDen"]),
+    ],
+    targets: targets
 )

@@ -40,6 +40,9 @@ Icon
 *.dmg
 *.zip
 
+# Local-only tests (Package.swift includes the test target only when present)
+Tests/
+
 # Logs
 *.log
 
