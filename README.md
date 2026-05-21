@@ -18,7 +18,7 @@
 ![Language](https://img.shields.io/badge/Swift-orange?style=flat-square&logo=swift)
 [![License](https://img.shields.io/badge/license-CLL%20v1.2-blue?style=flat-square)](LICENSE.md)
 
-`drag · drop · stash · share`
+`drag · drop · stash · ask · share`
 
 </div>
 
@@ -32,12 +32,15 @@
 
 FileDen is a tiny floating window — a "den" — that holds files while you move them between apps, archives, uploads, and conversations. Drag in. Drag out. Drop a folder, get a zip. Shake your mouse, get a fresh den near the cursor. Hit a hotkey, same. Close it, the contents go to recents.
 
-Built in Swift + AppKit + SwiftUI for macOS 14+. No Electron, no background daemons, no telemetry.
+And now it can *read* them: drop documents into a den and **Ask** questions about them in plain language — answered entirely on-device, with clickable citations. See [Ask](#ask-offline-document-qa).
+
+Built in Swift + AppKit + SwiftUI for macOS 14+. No Electron, no background daemons, no telemetry. The document Q&A runs on Apple's on-device frameworks — nothing leaves your Mac.
 
 ---
 
 ## Highlights
 
+- **Ask your documents, offline.** Drop in PDFs (scans included), Word, Markdown, text, or code, hit *Ask*, and get cited answers — fully on-device. [Details ↓](#ask-offline-document-qa)
 - **Multiple dens.** Spawn as many as you want — each is independent.
 - **Drag-out as multi-file.** One drag carries the whole stack.
 - **Smart actions menu.** Open, Quick Look, Reveal, Copy, Duplicate, Copy Path, Compress to ZIP, Unarchive, Print, Set as Wallpaper, Combine to PDF, Share, Move to Trash — surfaced based on file type.
@@ -83,6 +86,7 @@ The shortcut shown in the menu auto-mirrors whatever is configured. Disable the 
 The actions button (•••) replaces the share button and adapts to selection:
 
 - Always: Open, Quick Look, Reveal in Finder, Copy, Duplicate, Copy Path, Share…, Move to Trash.
+- Any searchable document in the selection (PDF / Word / Markdown / text / code / …) → **Ask AI…** ([offline Q&A](#ask-offline-document-qa)).
 - Folders or multiple items → **Compress to ZIP**.
 - All archives → **Unarchive**.
 - All printable (pdf/img/txt/rtf) → **Print**.
@@ -96,9 +100,28 @@ In the expanded view, the button label reflects context: *Actions*, *Actions: fi
 
 ---
 
+## Ask (offline document Q&A)
+
+Drop documents into a den and hit **Ask** to question them in natural language — entirely on-device, no network, no API keys, no subscription. Built for the two things every other "chat with your PDFs" tool gets wrong: **accuracy** and **speed**.
+
+- **Many formats, not just PDF.** PDF (with on-device OCR for scanned pages), Word (`.docx`), RTF, HTML, Markdown, plain text, CSV/TSV, JSON/YAML/TOML/INI, and source code.
+- **Hybrid retrieval.** Semantic search (Apple's `NLContextualEmbedding`) *and* keyword search (SQLite FTS5/BM25) are fused, so it catches both meaning *and* exact names, IDs, codes, and figures. Vectors are pre-normalised and scored with a single Accelerate matrix multiply — search is **sub-second** after indexing, not the minute-plus other tools take.
+- **Cited answers.** When Apple Intelligence is available, the on-device model writes a grounded answer and marks exactly which passages it used. Every citation is **clickable**: PDFs open to the page with the passage highlighted; text / Markdown / HTML / RTF / DOCX open to the highlighted span.
+- **Exact arithmetic.** Totals, sums, and counts are computed with a calculator tool — not guessed by the model — so "total revenue" returns the right number.
+- **Graceful fallback.** No Apple Intelligence (older Macs, or it's switched off)? Ask still works as fast, accurate semantic + keyword **passage search** with citations — only the written answer turns off.
+- **Notebooks.** Save a set of documents as a named notebook and reopen it from the menu bar to re-ask anytime. Indexes are cached, so reopening is instant.
+
+Open it from the **Ask** button in an expanded den, the **Ask AI…** item in the actions menu, or by saving a **Notebook** and choosing it from the menu bar. Turn the whole feature on or off — and toggle written answers — in **Settings → AI**.
+
+**Requirements.** Indexing and passage search run on macOS 14+. Written answers use Apple's Foundation Models and need macOS 26 with Apple Intelligence enabled; the framework is weak-linked, so FileDen runs fine without it.
+
+---
+
 ## Privacy
 
-Everything stays local. No network calls, no analytics, no crash-reporters. Settings and the recents list live in `UserDefaults`. Files produced by tools (PDF ops, conversions, archives) are staged under `~/Library/Application Support/counter-ltd/fileden/Staging` and cleared at launch. Wipe with `make reset`.
+Everything stays local — including the AI. Document Q&A runs entirely on Apple's on-device frameworks (`NaturalLanguage` embeddings, `Vision` OCR, `FoundationModels`); no text, no embeddings, and no questions ever leave your Mac. No network calls, no analytics, no crash-reporters.
+
+Settings and the recents list live in `UserDefaults`. Files produced by tools (PDF ops, conversions, archives) are staged under `~/Library/Application Support/counter-ltd/fileden/Staging` and cleared at launch. Ask's search indexes live under `…/Indices` and saved notebooks under `…/Notebooks` (kept across launches — clear indexes from *Settings → AI*, or wipe everything with `make reset`).
 
 ---
 
@@ -117,7 +140,7 @@ make clean      # clear SwiftPM + build/
 make reset      # wipe ~/Library/Application Support/counter-ltd/fileden
 ```
 
-The release bundle ships at ~1.2 MB on Apple Silicon — most of which is the icon.
+The release bundle ships at ~1.7 MB on Apple Silicon. There are no third-party dependencies — everything is built on system frameworks (AppKit, SwiftUI, PDFKit, AVFoundation, ImageIO, plus NaturalLanguage, Accelerate, Vision, SQLite, and a weak-linked FoundationModels for the Ask feature).
 
 Codesigning uses a local `FileDen Dev` code-signing certificate if one exists in your keychain, otherwise it falls back to ad-hoc.
 

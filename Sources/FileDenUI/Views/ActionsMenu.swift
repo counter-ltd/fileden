@@ -78,10 +78,12 @@ enum FileActions {
         for urls: [URL],
         host: NSView,
         onShare: @escaping (NSView) -> Void,
-        onRemove: @escaping ([URL]) -> Void
+        onRemove: @escaping ([URL]) -> Void,
+        onRemoveFromDen: (([URL]) -> Void)? = nil
     ) -> NSMenu {
         let menu = NSMenu()
-        let bridge = ActionBridge(urls: urls, host: host, onShare: onShare, onRemove: onRemove)
+        let bridge = ActionBridge(urls: urls, host: host, onShare: onShare,
+                                  onRemove: onRemove, onRemoveFromDen: onRemoveFromDen)
         objc_setAssociatedObject(menu, &ActionBridge.assocKey, bridge, .OBJC_ASSOCIATION_RETAIN)
 
         let hasDir = urls.contains { isDirectory($0) }
@@ -153,6 +155,10 @@ enum FileActions {
 
         menu.addItem(.separator())
 
+        if onRemoveFromDen != nil {
+            menu.addItem(item("Remove from Den", "minus.circle",
+                              #selector(ActionBridge.removeFromDen), bridge))
+        }
         menu.addItem(item("Move to Trash", "trash",
                           #selector(ActionBridge.trash), bridge))
 
@@ -273,14 +279,17 @@ final class ActionBridge: NSObject {
     weak var host: NSView?
     let onShare: (NSView) -> Void
     let onRemove: ([URL]) -> Void
+    let onRemoveFromDen: (([URL]) -> Void)?
 
     init(urls: [URL], host: NSView,
          onShare: @escaping (NSView) -> Void,
-         onRemove: @escaping ([URL]) -> Void) {
+         onRemove: @escaping ([URL]) -> Void,
+         onRemoveFromDen: (([URL]) -> Void)? = nil) {
         self.urls = urls
         self.host = host
         self.onShare = onShare
         self.onRemove = onRemove
+        self.onRemoveFromDen = onRemoveFromDen
     }
 
     @objc func askAI() {
@@ -374,6 +383,10 @@ final class ActionBridge: NSObject {
     @objc func share() {
         guard let host else { return }
         onShare(host)
+    }
+
+    @objc func removeFromDen() {
+        onRemoveFromDen?(urls)
     }
 
     @objc func trash() {

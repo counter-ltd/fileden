@@ -250,7 +250,8 @@ struct ShelfView: View {
                                     isSelected: selection.contains(item.id),
                                     onRemove: { remove(item) },
                                     onClick: { mods in handleSelectionClick(item: item, modifiers: mods) },
-                                    dragURLs: { dragURLs(for: item) }
+                                    dragURLs: { dragURLs(for: item) },
+                                    actionsMenu: { host in actionsMenu(for: item, host: host) }
                                 )
                                     .scaleEffect(itemsDealt ? 1 : 0.4)
                                     .opacity(itemsDealt ? 1 : 0)
@@ -270,7 +271,8 @@ struct ShelfView: View {
                                     isSelected: selection.contains(item.id),
                                     onRemove: { remove(item) },
                                     onClick: { mods in handleSelectionClick(item: item, modifiers: mods) },
-                                    dragURLs: { dragURLs(for: item) }
+                                    dragURLs: { dragURLs(for: item) },
+                                    actionsMenu: { host in actionsMenu(for: item, host: host) }
                                 )
                                     .opacity(itemsDealt ? 1 : 0)
                                     .animation(
@@ -500,6 +502,29 @@ struct ShelfView: View {
         return [item.url]
     }
 
+    /// Full right-click action menu for an item in the expanded view. Acts on the
+    /// whole selection when the right-clicked item is part of a multi-selection;
+    /// otherwise just that item, which it also selects for visual feedback.
+    private func actionsMenu(for item: ShelfItem, host: NSView) -> NSMenu {
+        let targets: [URL]
+        if selection.count > 1 && selection.contains(item.id) {
+            targets = items.filter { selection.contains($0.id) }.map(\.url)
+        } else {
+            targets = [item.url]
+            if selection != [item.id] {
+                selection = [item.id]
+                selectionAnchor = item.id
+            }
+        }
+        return FileActions.buildMenu(
+            for: targets,
+            host: host,
+            onShare: { view in shareAll(from: view) },
+            onRemove: { removed in removeURLs(removed) },
+            onRemoveFromDen: { removed in removeURLs(removed) }
+        )
+    }
+
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         for provider in providers {
             _ = provider.loadObject(ofClass: URL.self) { url, _ in
@@ -667,6 +692,7 @@ struct ExpandedItemView: View {
     let onRemove: () -> Void
     let onClick: (NSEvent.ModifierFlags) -> Void
     let dragURLs: () -> [URL]
+    let actionsMenu: (NSView) -> NSMenu?
     @State private var isHovered = false
 
     var body: some View {
@@ -694,7 +720,7 @@ struct ExpandedItemView: View {
                             .padding(-6)
                     )
                     .overlay(
-                        MultiURLDragView(urls: dragURLs, onTap: onClick)
+                        MultiURLDragView(urls: dragURLs, onTap: onClick, menu: actionsMenu)
                     )
 
                 if isHovered {
@@ -721,12 +747,6 @@ struct ExpandedItemView: View {
                 .foregroundStyle(.tertiary)
         }
         .onHover { h in withAnimation(.easeInOut(duration: 0.15)) { isHovered = h } }
-        .contextMenu {
-            Button("Reveal in Finder") {
-                NSWorkspace.shared.activateFileViewerSelecting([item.url])
-            }
-            Button("Remove", action: onRemove)
-        }
     }
 
     private var isDirectory: Bool { item.url.isDirectoryItem }
@@ -744,6 +764,7 @@ struct ExpandedListRowView: View {
     let onRemove: () -> Void
     let onClick: (NSEvent.ModifierFlags) -> Void
     let dragURLs: () -> [URL]
+    let actionsMenu: (NSView) -> NSMenu?
     @State private var isHovered = false
 
     var body: some View {
@@ -780,14 +801,8 @@ struct ExpandedListRowView: View {
                         .strokeBorder(Color.accentColor.opacity(isSelected ? 0.8 : 0), lineWidth: 1.5)
                 )
         )
-        .overlay(MultiURLDragView(urls: dragURLs, onTap: onClick))
+        .overlay(MultiURLDragView(urls: dragURLs, onTap: onClick, menu: actionsMenu))
         .onHover { h in withAnimation(.easeInOut(duration: 0.15)) { isHovered = h } }
-        .contextMenu {
-            Button("Reveal in Finder") {
-                NSWorkspace.shared.activateFileViewerSelecting([item.url])
-            }
-            Button("Remove", action: onRemove)
-        }
     }
 
     private var fileSize: String {

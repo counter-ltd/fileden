@@ -7,23 +7,30 @@ import AppKit
 struct MultiURLDragView: NSViewRepresentable {
     let urls: () -> [URL]
     var onTap: (NSEvent.ModifierFlags) -> Void = { _ in }
+    /// Right-click / control-click contextual menu provider. Receives the overlay
+    /// view so the menu can use it as a host (e.g. positioning a share picker).
+    /// Nil means no contextual menu.
+    var menu: ((NSView) -> NSMenu?)? = nil
 
     func makeNSView(context: Context) -> DragCaptureView {
         let v = DragCaptureView()
         v.urls = urls
         v.onTap = onTap
+        v.menuProvider = menu
         return v
     }
 
     func updateNSView(_ nsView: DragCaptureView, context: Context) {
         nsView.urls = urls
         nsView.onTap = onTap
+        nsView.menuProvider = menu
     }
 }
 
 final class DragCaptureView: NSView, NSDraggingSource {
     var urls: () -> [URL] = { [] }
     var onTap: (NSEvent.ModifierFlags) -> Void = { _ in }
+    var menuProvider: ((NSView) -> NSMenu?)? = nil
 
     private var downPointInWindow: NSPoint?
     private var downEvent: NSEvent?
@@ -35,6 +42,12 @@ final class DragCaptureView: NSView, NSDraggingSource {
     override func hitTest(_ point: NSPoint) -> NSView? {
         // Always answer for mouse — but let scroll/keyboard pass.
         return self
+    }
+
+    // Right-click / control-click: AppKit's default rightMouseDown pops up
+    // whatever this returns, positioned at the event.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        menuProvider?(self)
     }
 
     override func mouseDown(with event: NSEvent) {
