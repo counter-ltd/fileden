@@ -25,10 +25,14 @@ public final class DocumentChat: @unchecked Sendable {
 
     private let documentURLs: [URL]
     private let retrieve: Retrieve
+    private let pdfAction: (@Sendable (ToolContext.PDFAction) async -> String)?
 
-    public init(documentURLs: [URL], retrieve: @escaping Retrieve) {
+    public init(documentURLs: [URL],
+                retrieve: @escaping Retrieve,
+                pdfAction: (@Sendable (ToolContext.PDFAction) async -> String)? = nil) {
         self.documentURLs = documentURLs
         self.retrieve = retrieve
+        self.pdfAction = pdfAction
     }
 
     public var llmAvailable: Bool { Intelligence.isAvailable }
@@ -39,7 +43,7 @@ public final class DocumentChat: @unchecked Sendable {
                      config: LLMConfiguration = .appleDefault,
                      topK: Int = 6) -> AsyncStream<ChatTurnEvent> {
         AsyncStream { continuation in
-            let task = Task { [retrieve, documentURLs] in
+            let task = Task { [retrieve, documentURLs, pdfAction] in
                 // A query with no content word ("what?", "what is") can't anchor
                 // retrieval, and a small model will latch onto context noise — most
                 // visibly by echoing the previous answer. Ask for more instead.
@@ -53,7 +57,9 @@ public final class DocumentChat: @unchecked Sendable {
                 continuation.yield(.citations(citations))
 
                 let useHTTP = config.provider != .appleIntelligence
-                guard synthesize, !citations.isEmpty,
+                let hasPDFs = documentURLs.contains { $0.pathExtension.lowercased() == "pdf" }
+                let isPDFAction = pdfAction != nil && hasPDFs && Self.needsPDFAction(question)
+                guard synthesize, !citations.isEmpty || isPDFAction,
                       Intelligence.isAvailable || useHTTP else {
                     continuation.yield(.completed(text: Self.fallbackText(citations), mode: .passagesOnly, svg: nil))
                     continuation.finish()
@@ -62,9 +68,10 @@ public final class DocumentChat: @unchecked Sendable {
 
                 let arithmetic = Self.needsArithmetic(question)
                 let graph      = Self.needsGraph(question)
+                let pdfTools   = isPDFAction
 
                 if useHTTP {
-                    let instructions = LLMResponder.instructions(arithmetic: arithmetic, graph: graph)
+                    let instructions = LLMResponder.instructions(arithmetic: arithmetic, graph: graph, pdfTools: pdfTools)
                     let prompt       = Self.buildPrompt(question: question, history: history, citations: citations)
                     do {
                         var last = ""
@@ -84,13 +91,9 @@ public final class DocumentChat: @unchecked Sendable {
 
                 #if canImport(FoundationModels)
                 if #available(macOS 26, *) {
-                    // Attach the calculator only for genuinely arithmetic questions.
-                    // Always offering it makes the small model fixate on figures in a
-                    // number-heavy document and refuse plain factual questions.
-                    let tools = arithmetic
-                        ? ChatTools.make(context: ToolContext(documentURLs: documentURLs))
-                        : []
-                    let instructions = LLMResponder.instructions(arithmetic: arithmetic, graph: graph)
+                    let context = ToolContext(documentURLs: documentURLs, pdfAction: pdfAction)
+                    let tools = ChatTools.make(context: context, arithmetic: arithmetic, pdfTools: pdfTools)
+                    let instructions = LLMResponder.instructions(arithmetic: arithmetic, graph: graph, pdfTools: pdfTools)
                     var blocks = citations
                     while true {
                         do {
@@ -145,6 +148,18 @@ public final class DocumentChat: @unchecked Sendable {
             return (cleaned, .synthesized, svg)
         }
         return (trimmed, .synthesized, nil)
+    }
+
+    /// True when the question is requesting a PDF file operation (export, split, extract).
+    /// Gating PDF tools this way mirrors the arithmetic and graph approach: tools are only
+    /// attached when the turn actually calls for them, so the model doesn't reach for them
+    /// on plain factual questions.
+    static func needsPDFAction(_ question: String) -> Bool {
+        let q = question.lowercased()
+        let actionWords: Set<String> = ["export", "split", "extract", "convert", "separate", "save"]
+        let targetWords: Set<String> = ["page", "pages", "image", "images", "text", "png", "pdf"]
+        let words = Set(q.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty })
+        return !words.isDisjoint(with: actionWords) && !words.isDisjoint(with: targetWords)
     }
 
     /// True when the question is asking for a chart, graph, or data visualization.

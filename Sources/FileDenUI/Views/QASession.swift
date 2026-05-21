@@ -70,8 +70,22 @@ final class QASession: ObservableObject {
                     guard let self else { return }
                     self.engine = engine
                     let supported = urls.filter { TextExtractor.canExtract($0) }
-                    self.chat = DocumentChat(documentURLs: supported,
-                                             retrieve: { query, k in engine.retrieve(query, topK: k) })
+                    self.chat = DocumentChat(
+                        documentURLs: supported,
+                        retrieve: { query, k in engine.retrieve(query, topK: k) },
+                        pdfAction: { action in
+                            let result: [URL]
+                            switch action {
+                            case .splitPages(let urls):       result = PDFTools.splitPages(urls)
+                            case .exportPageImages(let urls): result = PDFTools.exportPageImages(urls)
+                            case .extractImages(let urls):    result = PDFTools.extractImages(urls)
+                            case .extractText(let urls):      result = PDFTools.extractText(urls)
+                            }
+                            guard !result.isEmpty else { return "The operation completed but produced no output." }
+                            _ = await MainActor.run { DenManager.shared.openDen(with: result) }
+                            return "Done — opened \(result.count) item\(result.count == 1 ? "" : "s") in a new den."
+                        }
+                    )
                     self.phase = engine.isReady ? .ready : .empty
                 }
             } catch {

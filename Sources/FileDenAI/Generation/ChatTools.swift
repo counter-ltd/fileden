@@ -3,27 +3,54 @@ import Foundation
 import FoundationModels
 #endif
 
-/// Context the chat's tools operate within. Extension point for future,
-/// app-affecting tools (e.g. "extract images into a new den") — add the callback
-/// or data a tool needs here, then register the tool in ``ChatTools/make(context:)``.
+/// Context the chat's tools operate within. Add callbacks here when a tool needs
+/// to trigger an app-level action (e.g. opening a new den with results).
 public struct ToolContext: Sendable {
     public let documentURLs: [URL]
+    /// Called by PDF tools to run an operation and open results. Returns a
+    /// human-readable status string the model echoes back to the user.
+    public let pdfAction: (@Sendable (PDFAction) async -> String)?
 
-    public init(documentURLs: [URL]) {
+    public enum PDFAction: Sendable {
+        case splitPages([URL])
+        case exportPageImages([URL])
+        case extractImages([URL])
+        case extractText([URL])
+    }
+
+    public init(documentURLs: [URL],
+                pdfAction: (@Sendable (PDFAction) async -> String)? = nil) {
         self.documentURLs = documentURLs
+        self.pdfAction = pdfAction
     }
 }
 
 #if canImport(FoundationModels)
-/// The registry of tools the on-device model may call during a chat. Today: a
-/// calculator (small models read numbers but can't reliably add them). Tomorrow:
-/// document actions. Keep new tools small, single-purpose, and described clearly.
+/// The registry of tools the on-device model may call during a chat. Keep new
+/// tools small, single-purpose, and described clearly.
 @available(macOS 26, *)
 public enum ChatTools {
-    public static func make(context: ToolContext) -> [any Tool] {
-        [CalculatorTool(), MinMaxTool()]
+    public static func make(context: ToolContext, arithmetic: Bool, pdfTools: Bool) -> [any Tool] {
+        var tools: [any Tool] = []
+        if arithmetic {
+            tools += [CalculatorTool(), MinMaxTool()]
+        }
+        if pdfTools, context.pdfAction != nil {
+            let pdfs = context.documentURLs.filter { $0.pathExtension.lowercased() == "pdf" }
+            if !pdfs.isEmpty {
+                tools += [
+                    PDFSplitTool(context: context),
+                    PDFExportImagesTool(context: context),
+                    PDFExtractImagesTool(context: context),
+                    PDFExtractTextTool(context: context),
+                ]
+            }
+        }
+        return tools
     }
 }
+
+// MARK: - Arithmetic tools
 
 /// Exact arithmetic for the model, backed by the crash-free ``ArithmeticEvaluator``.
 @available(macOS 26, *)
@@ -80,6 +107,80 @@ struct MinMaxTool: Tool {
         else { return "No valid entries found." }
 
         return "Minimum: \(minPair.0) (\(minPair.1)). Maximum: \(maxPair.0) (\(maxPair.1))."
+    }
+}
+
+// MARK: - PDF tools
+
+@available(macOS 26, *)
+struct PDFSplitTool: Tool {
+    let name = "pdf_split_pages"
+    let description = "Split each PDF into individual single-page PDFs and open the results in a new den. Use when the user asks to split a PDF, separate its pages, or get individual page files."
+
+    @Generable struct Arguments {}
+
+    let context: ToolContext
+
+    func call(arguments: Arguments) async throws -> String {
+        let pdfs = context.documentURLs.filter { $0.pathExtension.lowercased() == "pdf" }
+        guard !pdfs.isEmpty, let action = context.pdfAction else {
+            return "No PDF documents available."
+        }
+        return await action(.splitPages(pdfs))
+    }
+}
+
+@available(macOS 26, *)
+struct PDFExportImagesTool: Tool {
+    let name = "pdf_export_page_images"
+    let description = "Rasterize every page of the PDF to PNG images and open the results in a new den. Use when the user asks to export pages as images, convert pages to PNG, or save PDF pages as pictures."
+
+    @Generable struct Arguments {}
+
+    let context: ToolContext
+
+    func call(arguments: Arguments) async throws -> String {
+        let pdfs = context.documentURLs.filter { $0.pathExtension.lowercased() == "pdf" }
+        guard !pdfs.isEmpty, let action = context.pdfAction else {
+            return "No PDF documents available."
+        }
+        return await action(.exportPageImages(pdfs))
+    }
+}
+
+@available(macOS 26, *)
+struct PDFExtractImagesTool: Tool {
+    let name = "pdf_extract_images"
+    let description = "Extract the embedded image objects from the PDF and open them in a new den. Use when the user asks to extract images, pull out pictures, or get the embedded graphics from a PDF."
+
+    @Generable struct Arguments {}
+
+    let context: ToolContext
+
+    func call(arguments: Arguments) async throws -> String {
+        let pdfs = context.documentURLs.filter { $0.pathExtension.lowercased() == "pdf" }
+        guard !pdfs.isEmpty, let action = context.pdfAction else {
+            return "No PDF documents available."
+        }
+        return await action(.extractImages(pdfs))
+    }
+}
+
+@available(macOS 26, *)
+struct PDFExtractTextTool: Tool {
+    let name = "pdf_extract_text"
+    let description = "Extract the text layer from the PDF into .txt files and open them in a new den. Use when the user asks to extract text, get the text content, or convert a PDF to plain text."
+
+    @Generable struct Arguments {}
+
+    let context: ToolContext
+
+    func call(arguments: Arguments) async throws -> String {
+        let pdfs = context.documentURLs.filter { $0.pathExtension.lowercased() == "pdf" }
+        guard !pdfs.isEmpty, let action = context.pdfAction else {
+            return "No PDF documents available."
+        }
+        return await action(.extractText(pdfs))
     }
 }
 #endif

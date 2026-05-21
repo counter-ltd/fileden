@@ -44,15 +44,23 @@ enum LLMResponder {
     your response. You may add one sentence of context before or after. Output at most one graph tag.
     """
 
+    private static let pdfToolsGuidance = """
+    When the user asks to perform an action on the PDF — export pages as images, split into \
+    individual pages, extract embedded images, or extract the text layer — call the appropriate \
+    PDF tool immediately rather than explaining how to do it manually. The tool runs the operation \
+    and opens the results in a new window automatically.
+    """
+
     private static let closing = "Be concise and conversational."
 
-    /// Instructions tuned to the turn: calculator and/or graph guidance is included only
+    /// Instructions tuned to the turn: guidance for each capability is included only
     /// when the question actually calls for it, preventing small models from fixating on
-    /// numbers or graph syntax in unrelated answers.
-    static func instructions(arithmetic: Bool, graph: Bool = false) -> String {
+    /// irrelevant syntax or tools in unrelated answers.
+    static func instructions(arithmetic: Bool, graph: Bool = false, pdfTools: Bool = false) -> String {
         var parts = [core]
         if arithmetic { parts.append(arithmeticGuidance) }
         if graph      { parts.append(graphGuidance) }
+        if pdfTools   { parts.append(pdfToolsGuidance) }
         parts.append(closing)
         return parts.joined(separator: " ")
     }
