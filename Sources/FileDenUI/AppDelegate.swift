@@ -6,6 +6,46 @@ import FileDenCore
 public class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     private var settingsPopover: NSPopover?
+    private var instanceLockFD: Int32 = -1
+
+    public func applicationWillFinishLaunching(_ notification: Notification) {
+        // Single instance only. A file lock is the race-safe source of truth:
+        // `flock` is atomic, so exactly one process can hold it — two launches
+        // racing at the same instant can't both bow out (a symmetric "is another
+        // instance running?" check can, leaving zero alive). If we don't get the
+        // lock, activate whoever holds it and quit before setting anything up.
+        // LSMultipleInstancesProhibited blocks a second `open`; this also covers
+        // a binary launched directly (e.g. `make debug`).
+        guard acquireInstanceLock() else {
+            activateExistingInstance()
+            exit(0)
+        }
+    }
+
+    /// Take an exclusive, non-blocking lock held for the process's lifetime
+    /// (the kernel releases it on exit). Returns false if another instance has
+    /// it; true if acquired — or if the lock file can't be created, so a
+    /// filesystem hiccup never prevents launch.
+    private func acquireInstanceLock() -> Bool {
+        let id = Bundle.main.bundleIdentifier ?? "ltd.anti.FileDen"
+        let path = (NSTemporaryDirectory() as NSString).appendingPathComponent("\(id).lock")
+        let fd = open(path, O_CREAT | O_RDWR, 0o644)
+        guard fd >= 0 else { return true }
+        if flock(fd, LOCK_EX | LOCK_NB) != 0 {
+            close(fd)
+            return false
+        }
+        instanceLockFD = fd  // keep open to hold the lock
+        return true
+    }
+
+    private func activateExistingInstance() {
+        guard let id = Bundle.main.bundleIdentifier else { return }
+        let me = NSRunningApplication.current
+        NSRunningApplication.runningApplications(withBundleIdentifier: id)
+            .first { $0.processIdentifier != me.processIdentifier }?
+            .activate()
+    }
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
