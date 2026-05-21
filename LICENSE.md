@@ -150,7 +150,7 @@ copy of this Software to:
   accessibility-focused, artistic, research, or community purposes;
 - study and inspect the Software;
 - modify the Software;
-- distribute original or modified versions of the Software;
+- distribute original or modified versions of the Software in source form only;
 - create extensions, modules, plugins, tools, educational resources,
   integrations, and derivative works for non-commercial purposes;
 - self-host, fork, and archive the Software;
@@ -357,6 +357,37 @@ of the Software:
 
     Breach of this condition constitutes willful infringement and carries
     no cure window. Rights terminate immediately.
+
+4b. No Binary Distribution
+
+    Only the copyright holder may distribute the Software in compiled,
+    binary, or packaged form.
+
+    No other party may:
+    - distribute, publish, upload, or otherwise make available compiled
+      or binary versions of the Software or any derivative work, through
+      any channel — including but not limited to app stores, package
+      registries, direct download, file hosting, or peer-to-peer
+      distribution;
+    - fork the Software and distribute the fork in compiled or binary
+      form, whether or not the fork has been substantially modified;
+    - repackage, bundle, or redistribute any compiled or binary form of
+      the Software as part of another product, installer, or distribution;
+    - automate, script, or otherwise facilitate the compilation and
+      public distribution of the Software on behalf of third parties.
+
+    Source code — including forks and modified versions — may be
+    distributed under the terms of this license, but only in source
+    form. The right to distribute compiled or packaged versions is
+    reserved exclusively to the copyright holder.
+
+    This condition applies regardless of whether the binary distribution
+    is free of charge, open access, or made available without commercial
+    intent. The restriction is on form of distribution, not on
+    commercial nature.
+
+    Breach of this condition carries no cure window. Rights terminate
+    immediately.
 
 5. Anti-Evasion and Circumvention
 
@@ -758,6 +789,7 @@ automatic termination of all rights:
 - breach of the Large Corporation Restriction (Condition 3);
 - breach of the Commercial Use and Profit Restriction (Condition 4);
 - breach of the No Sale of Derivatives condition (Condition 4a);
+- breach of the No Binary Distribution condition (Condition 4b);
 - breach of the Anti-Evasion clause (Condition 5);
 - breach of the Anti-Appropriation and Competitive Replication clause
   (Condition 19);
@@ -820,6 +852,15 @@ The copyright holder retains the right to:
 - grant exemptions to specific parties;
 - enforce restrictions defined in this license;
 - and update future versions of this license.
+
+The copyright holder may distribute compiled, packaged versions of the
+Software commercially — including via app stores or direct sale — while
+keeping the source code publicly available. This right belongs solely to
+the copyright holder and is not extended to any other party under this
+license. Anyone may obtain the source code and build the Software
+themselves at no cost; purchasing a compiled distribution is a voluntary
+means of supporting the copyright holder's work, not a requirement for
+use.
 
 Use of a later version of this license is permitted at Your option.
 Earlier versions remain valid for prior distributions made under them.
