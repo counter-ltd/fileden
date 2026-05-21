@@ -156,7 +156,7 @@ struct ShelfView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .padding(.horizontal, 40)
+                        .padding(.horizontal, 60)
                         .padding(.bottom, 10)
                 }
             }
@@ -376,9 +376,25 @@ struct ShelfView: View {
 
     private var askPane: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .center) {
-                Text("Ask")
-                    .font(.system(size: 13, weight: .semibold))
+            HStack(alignment: .center, spacing: 8) {
+                if let s = askSession {
+                    switch s.phase {
+                    case .indexing:
+                        ProgressView().controlSize(.small)
+                        Text("Indexing \(s.fileCount) \(s.fileCount == 1 ? "document" : "documents")…")
+                            .font(.system(size: 12, weight: .medium))
+                    case .ready:
+                        Image(systemName: "sparkles").foregroundStyle(.tint)
+                        Text("\(s.fileCount) \(s.fileCount == 1 ? "document" : "documents") · offline")
+                            .font(.system(size: 12, weight: .medium))
+                    case .empty:
+                        Image(systemName: "doc.questionmark").foregroundStyle(.secondary)
+                        Text("No documents").font(.system(size: 12, weight: .medium))
+                    case .failed:
+                        Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                        Text("Error").font(.system(size: 12, weight: .medium))
+                    }
+                }
                 Spacer()
                 Button(action: { withAnimation { isAsking = false } }) {
                     Image(systemName: "xmark")

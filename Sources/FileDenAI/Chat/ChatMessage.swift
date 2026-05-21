@@ -10,13 +10,16 @@ public struct ChatMessage: Identifiable, Sendable, Equatable {
     public var text: String
     public var citations: [Citation]
     public var isStreaming: Bool
+    /// SVG markup generated from a `<graph>` spec in the model's response.
+    public var svg: String?
 
     public init(id: UUID = UUID(), role: Role, text: String = "",
-                citations: [Citation] = [], isStreaming: Bool = false) {
+                citations: [Citation] = [], isStreaming: Bool = false, svg: String? = nil) {
         self.id = id
         self.role = role
         self.text = text
         self.citations = citations
         self.isStreaming = isStreaming
+        self.svg = svg
     }
 }

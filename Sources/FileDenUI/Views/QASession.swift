@@ -33,8 +33,18 @@ final class QASession: ObservableObject {
     }
 
     var hasMessages: Bool { !messages.isEmpty }
-    var llmAvailable: Bool { Intelligence.isAvailable }
-    var llmUnavailableNote: String? { Intelligence.unavailabilityReason }
+
+    var llmAvailable: Bool {
+        let provider = LLMConfiguration.Provider(rawValue: FileDenSettings.shared.llmProvider)
+            ?? .appleIntelligence
+        return provider == .appleIntelligence ? Intelligence.isAvailable : true
+    }
+
+    var llmUnavailableNote: String? {
+        let provider = LLMConfiguration.Provider(rawValue: FileDenSettings.shared.llmProvider)
+            ?? .appleIntelligence
+        return provider == .appleIntelligence ? Intelligence.unavailabilityReason : nil
+    }
 
     // MARK: - Indexing
 
@@ -81,17 +91,17 @@ final class QASession: ObservableObject {
         let assistantID = assistant.id
         isBusy = true
 
-        let synthesize = FileDenSettings.shared.aiSynthesisEnabled
+        let config = FileDenSettings.shared.llmConfiguration
         turnTask = Task { [weak self] in
-            for await event in chat.send(question: trimmed, history: history, synthesize: synthesize) {
+            for await event in chat.send(question: trimmed, history: history, synthesize: true, config: config) {
                 if Task.isCancelled { return }
                 switch event {
                 case .citations(let citations):
                     self?.update(assistantID) { $0.citations = citations }
                 case .partialText(let text):
                     self?.update(assistantID) { $0.text = text }
-                case .completed(let text, _):
-                    self?.update(assistantID) { $0.text = text; $0.isStreaming = false }
+                case .completed(let text, _, let svg):
+                    self?.update(assistantID) { $0.text = text; $0.svg = svg; $0.isStreaming = false }
                 }
             }
             self?.update(assistantID) { $0.isStreaming = false }

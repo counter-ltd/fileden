@@ -7,7 +7,6 @@ import FileDenAI
 /// they used. Clicking a source opens it in the viewer pane.
 struct QAView: View {
     @ObservedObject var session: QASession
-    @ObservedObject private var settings = FileDenSettings.shared
     @State private var question = ""
     @FocusState private var inputFocused: Bool
     /// Called when a source is clicked, so the host can show it in a pane.
@@ -15,8 +14,6 @@ struct QAView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            banner
-            Divider().opacity(0.4)
             transcript
             Divider().opacity(0.4)
             inputBar
@@ -29,46 +26,6 @@ struct QAView: View {
     }
 
     // MARK: - Banner
-
-    @ViewBuilder private var banner: some View {
-        HStack(spacing: 8) {
-            switch session.phase {
-            case .indexing:
-                ProgressView().controlSize(.small)
-                Text("Indexing \(session.fileCount) \(plural(session.fileCount))…")
-            case .ready:
-                Image(systemName: "sparkles").foregroundStyle(.tint)
-                Text("\(session.fileCount) \(plural(session.fileCount)) · offline")
-                Spacer()
-                aiToggle
-            case .empty:
-                Image(systemName: "doc.questionmark").foregroundStyle(.secondary)
-                Text("Nothing to search — add PDF, text, Markdown, or HTML files.")
-            case .failed(let message):
-                Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
-                Text(message)
-            }
-            if case .ready = session.phase {} else { Spacer() }
-        }
-        .font(.system(size: 12, weight: .medium))
-        .lineLimit(2)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-    }
-
-    @ViewBuilder private var aiToggle: some View {
-        if session.llmAvailable {
-            Toggle(isOn: $settings.aiSynthesisEnabled) {
-                Text("AI answer").font(.system(size: 11, weight: .medium))
-            }
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-        } else if let note = session.llmUnavailableNote {
-            Text("Passages only")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-                .help(note)
-        }
-    }
 
     // MARK: - Transcript
 
@@ -120,31 +77,46 @@ struct QAView: View {
                     .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 14))
             }
         case .assistant:
+            let bubbleMaxW: CGFloat = message.svg.map { svgNaturalSize($0).width + 24 } ?? .infinity
             assistantBubble(message)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: bubbleMaxW, alignment: .leading)
         }
     }
 
     @ViewBuilder private func assistantBubble(_ message: ChatMessage) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            if message.text.isEmpty && message.isStreaming {
+            if message.text.isEmpty && message.svg == nil && message.isStreaming {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("Thinking…").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             } else {
-                Text(message.text)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.primary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if !message.text.isEmpty {
+                    Text(message.text)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.primary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if let svg = message.svg {
+                    let size = svgNaturalSize(svg)
+                    SVGView(svg: svg)
+                        .aspectRatio(size.width / size.height, contentMode: .fit)
+                        .frame(maxWidth: size.width)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
             }
-            if !message.citations.isEmpty {
+            if message.svg != nil || !message.citations.isEmpty {
                 HStack {
+                    if let svg = message.svg {
+                        GraphExportButton(svg: svg)
+                    }
                     Spacer()
-                    SourcesButton(citations: message.citations,
-                                  onOpen: { onOpenCitation?($0) })
+                    if !message.citations.isEmpty {
+                        SourcesButton(citations: message.citations,
+                                      onOpen: { onOpenCitation?($0) })
+                    }
                 }
             }
         }
@@ -198,6 +170,20 @@ struct QAView: View {
     }
 
     private func plural(_ n: Int) -> String { n == 1 ? "document" : "documents" }
+
+    /// Parse the declared width/height from an SVG element's opening tag so the
+    /// WKWebView and its bubble can be sized to exactly fit the chart content.
+    private func svgNaturalSize(_ svg: String) -> CGSize {
+        let head = String(svg.prefix(256))
+        func attr(_ name: String) -> CGFloat? {
+            guard let r = head.range(of: "\(name)=\"") else { return nil }
+            let after = head[r.upperBound...]
+            guard let q = after.firstIndex(of: "\"") else { return nil }
+            let v = CGFloat(Double(String(after[..<q])) ?? 0)
+            return v > 0 ? v : nil
+        }
+        return CGSize(width: attr("width") ?? 540, height: attr("height") ?? 270)
+    }
 }
 
 /// A small chip on an assistant bubble showing the source count; tap for a
@@ -273,5 +259,54 @@ private struct SourcesPopover: View {
 
     private func icon(_ citation: Citation) -> String {
         citation.sourceURL.pathExtension.lowercased() == "pdf" ? "doc.richtext" : "doc.text"
+    }
+}
+
+/// Inline export button shown in the chart bubble's footer row.
+/// Rasterises the chart at 2× and stages it in a new den.
+private struct GraphExportButton: View {
+    let svg: String
+
+    var body: some View {
+        Button(action: export) {
+            HStack(spacing: 4) {
+                Image(systemName: "square.and.arrow.up").font(.system(size: 10, weight: .semibold))
+                Text("Export").font(.system(size: 11, weight: .medium))
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(Color.primary.opacity(0.07), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("Export chart to a new den")
+    }
+
+    private func export() {
+        guard let svgData = svg.data(using: .utf8),
+              let image   = NSImage(data: svgData),
+              let png     = rasterize(image, scale: 2).flatMap(pngData)
+        else { return }
+
+        let url = Staging.uniqueURL(in: Staging.dir("CHART"), name: "chart.png")
+        guard (try? png.write(to: url)) != nil else { return }
+        DenManager.shared.openDen(with: [url], placement: .nearCursor)
+    }
+
+    private func rasterize(_ image: NSImage, scale: CGFloat) -> NSImage? {
+        let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
+        let out  = NSImage(size: size)
+        out.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(in: NSRect(origin: .zero, size: size))
+        out.unlockFocus()
+        return out
+    }
+
+    private func pngData(_ image: NSImage) -> Data? {
+        guard let tiff = image.tiffRepresentation,
+              let rep  = NSBitmapImageRep(data: tiff)
+        else { return nil }
+        return rep.representation(using: .png, properties: [.interlaced: false])
     }
 }

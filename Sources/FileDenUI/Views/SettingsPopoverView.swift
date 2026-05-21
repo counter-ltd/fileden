@@ -71,13 +71,7 @@ struct SettingsPopoverView: View {
             if settings.aiEnabled {
                 Divider()
 
-                settingRow(
-                    title: "Written answers",
-                    subtitle: "Summarize and answer in prose. Off shows the source passages only.",
-                    isOn: $settings.aiSynthesisEnabled
-                )
-
-                intelligenceStatus
+                providerSection
 
                 Divider()
 
@@ -97,6 +91,68 @@ struct SettingsPopoverView: View {
             }
         }
         .animation(.easeInOut(duration: 0.15), value: settings.aiEnabled)
+    }
+
+    // MARK: - Provider section
+
+    private var providerSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center) {
+                Text("Model")
+                    .font(.system(size: 13))
+                Spacer()
+                Picker("", selection: $settings.llmProvider) {
+                    ForEach(LLMConfiguration.Provider.allCases, id: \.rawValue) { p in
+                        Text(p.displayName).tag(p.rawValue)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .onChange(of: settings.llmProvider) { _, _ in
+                    settings.llmBaseURL = ""
+                    settings.llmModel   = ""
+                }
+            }
+
+            let selected = LLMConfiguration.Provider(rawValue: settings.llmProvider) ?? .appleIntelligence
+
+            if selected == .appleIntelligence {
+                intelligenceStatus
+            } else {
+                httpProviderFields(for: selected)
+            }
+        }
+    }
+
+    @ViewBuilder private func httpProviderFields(for provider: LLMConfiguration.Provider) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            providerField("Base URL", text: $settings.llmBaseURL,
+                          placeholder: provider.defaultBaseURL, isSecure: false)
+            providerField("Model", text: $settings.llmModel,
+                          placeholder: provider.defaultModel, isSecure: false)
+            if provider.requiresAPIKey {
+                providerField("API Key", text: $settings.llmAPIKey,
+                              placeholder: "sk-…", isSecure: true)
+            }
+        }
+    }
+
+    private func providerField(_ label: String, text: Binding<String>, placeholder: String, isSecure: Bool) -> some View {
+        HStack(alignment: .center, spacing: 6) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .frame(width: 56, alignment: .trailing)
+            Group {
+                if isSecure {
+                    SecureField(placeholder, text: text)
+                } else {
+                    TextField(placeholder, text: text)
+                }
+            }
+            .textFieldStyle(.roundedBorder)
+            .font(.system(size: 11))
+        }
     }
 
     @ViewBuilder private var intelligenceStatus: some View {

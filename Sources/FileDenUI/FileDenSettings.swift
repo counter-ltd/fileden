@@ -1,4 +1,5 @@
 import Foundation
+import FileDenAI
 
 /// User-tunable settings, persisted to `UserDefaults` and observed by SwiftUI.
 ///
@@ -40,10 +41,32 @@ final class FileDenSettings: ObservableObject {
         didSet { UserDefaults.standard.set(aiEnabled, forKey: "aiEnabled") }
     }
 
-    /// When true (and the on-device LLM is available), Ask writes a grounded
-    /// answer over the retrieved passages; when false, it shows passages only.
-    @Published var aiSynthesisEnabled: Bool {
-        didSet { UserDefaults.standard.set(aiSynthesisEnabled, forKey: "aiSynthesisEnabled") }
+    // MARK: - LLM provider
+
+    /// Raw value of `LLMConfiguration.Provider` (e.g. "apple", "openai", "ollama", "llamacpp").
+    @Published var llmProvider: String {
+        didSet { UserDefaults.standard.set(llmProvider, forKey: "llmProvider") }
+    }
+
+    /// Base URL for the OpenAI-compatible endpoint. Empty = use provider default.
+    @Published var llmBaseURL: String {
+        didSet { UserDefaults.standard.set(llmBaseURL, forKey: "llmBaseURL") }
+    }
+
+    /// API key for the provider (required for OpenAI; leave empty for local servers).
+    @Published var llmAPIKey: String {
+        didSet { UserDefaults.standard.set(llmAPIKey, forKey: "llmAPIKey") }
+    }
+
+    /// Model name sent in requests (e.g. "gpt-4o-mini", "llama3.2").
+    @Published var llmModel: String {
+        didSet { UserDefaults.standard.set(llmModel, forKey: "llmModel") }
+    }
+
+    /// Builds an `LLMConfiguration` from the current settings.
+    var llmConfiguration: LLMConfiguration {
+        let provider = LLMConfiguration.Provider(rawValue: llmProvider) ?? .appleIntelligence
+        return LLMConfiguration(provider: provider, baseURL: llmBaseURL, apiKey: llmAPIKey, model: llmModel)
     }
 
     var hasShortcut: Bool { shortcutKeyCode >= 0 }
@@ -58,6 +81,10 @@ final class FileDenSettings: ObservableObject {
         notchActivationEnabled = UserDefaults.standard.bool(forKey: "notchActivationEnabled")
         // Both default on: the feature is available out of the box.
         aiEnabled = UserDefaults.standard.object(forKey: "aiEnabled") as? Bool ?? true
-        aiSynthesisEnabled = UserDefaults.standard.object(forKey: "aiSynthesisEnabled") as? Bool ?? true
+        llmProvider = UserDefaults.standard.string(forKey: "llmProvider")
+            ?? LLMConfiguration.Provider.appleIntelligence.rawValue
+        llmBaseURL = UserDefaults.standard.string(forKey: "llmBaseURL") ?? ""
+        llmAPIKey  = UserDefaults.standard.string(forKey: "llmAPIKey")  ?? ""
+        llmModel   = UserDefaults.standard.string(forKey: "llmModel")   ?? ""
     }
 }
