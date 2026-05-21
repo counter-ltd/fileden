@@ -3,6 +3,41 @@ import Foundation
 import FoundationModels
 #endif
 
+// MARK: - HTTP tool (provider-agnostic)
+
+/// A tool callable from any OpenAI-compatible HTTP endpoint.
+/// The handler receives the raw arguments JSON string and returns a result string.
+struct HTTPTool: Sendable {
+    let name: String
+    let description: String
+    /// property-name → description (all properties are typed `string`).
+    let properties: [String: String]
+    let required: [String]
+    let handler: @Sendable (String) async -> String
+
+    /// OpenAI-format tool definition suitable for `JSONSerialization`.
+    var openAIDefinition: [String: Any] {
+        var propsDict: [String: Any] = [:]
+        for (propName, propDesc) in properties {
+            propsDict[propName] = ["type": "string", "description": propDesc] as [String: Any]
+        }
+        return [
+            "type": "function",
+            "function": [
+                "name": name,
+                "description": description,
+                "parameters": [
+                    "type": "object",
+                    "properties": propsDict,
+                    "required": required,
+                ] as [String: Any],
+            ] as [String: Any],
+        ]
+    }
+}
+
+// MARK: - ToolContext
+
 /// Context the chat's tools operate within. Add callbacks here when a tool needs
 /// to trigger an app-level action (e.g. opening a new den with results).
 public struct ToolContext: Sendable {
@@ -25,12 +60,108 @@ public struct ToolContext: Sendable {
     }
 }
 
+// MARK: - HTTP tool registry
+
+enum ChatTools {
+    /// Build the set of HTTP tools for an OpenAI-compatible turn.
+    static func makeHTTP(context: ToolContext, arithmetic: Bool, pdfTools: Bool) -> [HTTPTool] {
+        var tools: [HTTPTool] = []
+
+        if arithmetic {
+            tools.append(HTTPTool(
+                name: "calculate",
+                description: "Evaluate an arithmetic expression and return the exact result. Use for totals, sums, differences, products, percentages, or counts.",
+                properties: [
+                    "expression": "An arithmetic expression over the relevant numbers, e.g. '$42,000 + $68,000'. Currency symbols and thousands commas are fine.",
+                ],
+                required: ["expression"],
+                handler: { args in
+                    guard
+                        let data  = args.data(using: .utf8),
+                        let json  = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                        let expr  = json["expression"] as? String,
+                        let value = ArithmeticEvaluator.evaluate(expr)
+                    else { return "Could not evaluate the expression." }
+                    let result = value == value.rounded()
+                        ? String(Int(value))
+                        : String(format: "%.4f", value)
+                    return "\(expr) = \(result)"
+                }
+            ))
+
+            tools.append(HTTPTool(
+                name: "find_min_max",
+                description: "Find the minimum and maximum in a labeled dataset. Use for highest, lowest, best, worst, peak, or bottom queries.",
+                properties: [
+                    "entries": "Comma-separated label:value pairs, e.g. \"January:2863, February:2980\". Currency symbols are fine.",
+                ],
+                required: ["entries"],
+                handler: { args in
+                    guard
+                        let data    = args.data(using: .utf8),
+                        let json    = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                        let entries = json["entries"] as? String
+                    else { return "Invalid arguments." }
+                    let pairs: [(String, Double)] = entries
+                        .components(separatedBy: ",")
+                        .compactMap { entry -> (String, Double)? in
+                            let parts = entry.components(separatedBy: ":")
+                            guard parts.count >= 2 else { return nil }
+                            let label = parts.dropLast().joined(separator: ":").trimmingCharacters(in: .whitespaces)
+                            let raw   = parts.last!
+                                .trimmingCharacters(in: .whitespaces)
+                                .filter { $0.isNumber || $0 == "." || $0 == "-" }
+                            guard let value = Double(raw) else { return nil }
+                            return (label, value)
+                        }
+                    guard
+                        let minPair = pairs.min(by: { $0.1 < $1.1 }),
+                        let maxPair = pairs.max(by: { $0.1 < $1.1 })
+                    else { return "No valid entries found." }
+                    return "Minimum: \(minPair.0) (\(minPair.1)). Maximum: \(maxPair.0) (\(maxPair.1))."
+                }
+            ))
+        }
+
+        if pdfTools, let action = context.pdfAction {
+            let pdfs = context.documentURLs.filter { $0.pathExtension.lowercased() == "pdf" }
+            if !pdfs.isEmpty {
+                tools.append(HTTPTool(
+                    name: "pdf_split_pages",
+                    description: "Split each PDF into individual single-page PDFs and open the results in a new den.",
+                    properties: [:], required: [],
+                    handler: { _ in await action(.splitPages(pdfs)) }
+                ))
+                tools.append(HTTPTool(
+                    name: "pdf_export_page_images",
+                    description: "Rasterize every page of the PDF to PNG images and open the results in a new den.",
+                    properties: [:], required: [],
+                    handler: { _ in await action(.exportPageImages(pdfs)) }
+                ))
+                tools.append(HTTPTool(
+                    name: "pdf_extract_images",
+                    description: "Extract embedded image objects from the PDF and open them in a new den.",
+                    properties: [:], required: [],
+                    handler: { _ in await action(.extractImages(pdfs)) }
+                ))
+                tools.append(HTTPTool(
+                    name: "pdf_extract_text",
+                    description: "Extract the text layer from the PDF into .txt files and open them in a new den.",
+                    properties: [:], required: [],
+                    handler: { _ in await action(.extractText(pdfs)) }
+                ))
+            }
+        }
+
+        return tools
+    }
+}
+
 #if canImport(FoundationModels)
-/// The registry of tools the on-device model may call during a chat. Keep new
-/// tools small, single-purpose, and described clearly.
+/// FoundationModels tool registry for the on-device Apple Intelligence path.
 @available(macOS 26, *)
-public enum ChatTools {
-    public static func make(context: ToolContext, arithmetic: Bool, pdfTools: Bool) -> [any Tool] {
+extension ChatTools {
+    static func make(context: ToolContext, arithmetic: Bool, pdfTools: Bool) -> [any Tool] {
         var tools: [any Tool] = []
         if arithmetic {
             tools += [CalculatorTool(), MinMaxTool()]

@@ -71,12 +71,14 @@ public final class DocumentChat: @unchecked Sendable {
                 let pdfTools   = isPDFAction
 
                 if useHTTP {
+                    let httpContext  = ToolContext(documentURLs: documentURLs, pdfAction: pdfAction)
+                    let httpTools    = ChatTools.makeHTTP(context: httpContext, arithmetic: arithmetic, pdfTools: pdfTools)
                     let instructions = LLMResponder.instructions(arithmetic: arithmetic, graph: graph, pdfTools: pdfTools)
                     let prompt       = Self.buildPrompt(question: question, history: history, citations: citations)
                     do {
                         var last = ""
                         last = try await OpenAILLMResponder.stream(
-                            prompt: prompt, systemPrompt: instructions, config: config
+                            prompt: prompt, systemPrompt: instructions, tools: httpTools, config: config
                         ) { text in
                             continuation.yield(.partialText(text))
                         }
