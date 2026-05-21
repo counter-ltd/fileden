@@ -2,6 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import AppKit
 import FileDenCore
+import FileDenAI
 
 // MARK: - Size notification
 extension Notification.Name {
@@ -10,6 +11,10 @@ extension Notification.Name {
     static let newDenRequested      = Notification.Name("newDenRequested")
     static let denClosed            = Notification.Name("denClosed")
     static let denEmptyRequested    = Notification.Name("denEmptyRequested")
+    /// Posted with `[URL]` to open the Ask window for those documents.
+    static let askAIRequested       = Notification.Name("askAIRequested")
+    /// Posted with the controller's `ObjectIdentifier` when an Ask window closes.
+    static let qaClosed             = Notification.Name("qaClosed")
 }
 
 struct ShelfView: View {
@@ -22,6 +27,7 @@ struct ShelfView: View {
     var initialURLs: [URL] = []
 
     @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var settings = FileDenSettings.shared
     @State private var items: [ShelfItem] = []
     @State private var isTargeted = false
     @State private var isHovered = false
@@ -290,6 +296,24 @@ struct ShelfView: View {
                 }
                 .buttonStyle(.plain)
                 Spacer()
+                if settings.aiEnabled && !askableURLs.isEmpty {
+                    Button(action: askAI) {
+                        Label("Ask", systemImage: "sparkles")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.tint)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Ask questions about these documents, offline")
+                    .padding(.trailing, 6)
+                    Button(action: saveAsNotebook) {
+                        Image(systemName: "book.closed")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Save these documents as a notebook to re-ask anytime")
+                    .padding(.trailing, 6)
+                }
                 ActionsMenuButton(
                     title: actionsButtonLabel,
                     urls: { selectedItems.map(\.url) },
@@ -510,6 +534,34 @@ struct ShelfView: View {
 
     private var selectedItems: [ShelfItem] {
         selection.isEmpty ? items : items.filter { selection.contains($0.id) }
+    }
+
+    /// Text-bearing files among the current selection (PDF/HTML/text/Markdown)
+    /// that the offline Ask feature can search.
+    private var askableURLs: [URL] {
+        selectedItems.map(\.url).filter { TextExtractor.canExtract($0) }
+    }
+
+    /// Open the Ask window for the den's searchable documents. Routed through a
+    /// notification so it doesn't need a reference to `DenManager`.
+    private func askAI() {
+        let urls = askableURLs
+        guard !urls.isEmpty else { return }
+        NotificationCenter.default.post(name: .askAIRequested, object: urls)
+    }
+
+    /// Save the den's searchable documents as a named, persistent notebook.
+    private func saveAsNotebook() {
+        let urls = askableURLs
+        guard !urls.isEmpty else { return }
+        let suggested = urls.count == 1
+            ? urls[0].deletingPathExtension().lastPathComponent
+            : "\(urls[0].deletingPathExtension().lastPathComponent) +\(urls.count - 1)"
+        if let name = promptForText(title: "Save as Notebook",
+                                    message: "Name this set of \(urls.count) document\(urls.count == 1 ? "" : "s"). Reopen and ask it anytime from the menu bar.",
+                                    defaultValue: suggested) {
+            NotebookStore.shared.add(name: name, urls: urls)
+        }
     }
 
     private var actionsButtonLabel: String {

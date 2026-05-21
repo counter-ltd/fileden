@@ -34,6 +34,18 @@ final class FileDenSettings: ObservableObject {
         didSet { UserDefaults.standard.set(notchActivationEnabled, forKey: "notchActivationEnabled") }
     }
 
+    /// Master switch for the offline Ask feature. When false, all Ask/Notebook
+    /// affordances are hidden and nothing is indexed.
+    @Published var aiEnabled: Bool {
+        didSet { UserDefaults.standard.set(aiEnabled, forKey: "aiEnabled") }
+    }
+
+    /// When true (and the on-device LLM is available), Ask writes a grounded
+    /// answer over the retrieved passages; when false, it shows passages only.
+    @Published var aiSynthesisEnabled: Bool {
+        didSet { UserDefaults.standard.set(aiSynthesisEnabled, forKey: "aiSynthesisEnabled") }
+    }
+
     var hasShortcut: Bool { shortcutKeyCode >= 0 }
 
     private init() {
@@ -44,5 +56,8 @@ final class FileDenSettings: ObservableObject {
         hotkeyActivationEnabled = UserDefaults.standard.bool(forKey: "hotkeyActivationEnabled")
         shakeActivationEnabled = UserDefaults.standard.bool(forKey: "shakeActivationEnabled")
         notchActivationEnabled = UserDefaults.standard.bool(forKey: "notchActivationEnabled")
+        // Both default on: the feature is available out of the box.
+        aiEnabled = UserDefaults.standard.object(forKey: "aiEnabled") as? Bool ?? true
+        aiSynthesisEnabled = UserDefaults.standard.object(forKey: "aiSynthesisEnabled") as? Bool ?? true
     }
 }

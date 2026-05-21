@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import FileDenCore
+import FileDenAI
 
 @MainActor
 public class AppDelegate: NSObject, NSApplicationDelegate {
@@ -124,6 +125,31 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         recentsItem.submenu = recentsMenu
         menu.addItem(recentsItem)
 
+        if FileDenSettings.shared.aiEnabled {
+        let notebooks = NotebookStore.shared.notebooks
+        let notebooksItem = NSMenuItem(title: "Notebooks", action: nil, keyEquivalent: "")
+        let notebooksMenu = NSMenu(title: "Notebooks")
+        if notebooks.isEmpty {
+            let empty = NSMenuItem(title: "No Notebooks", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            notebooksMenu.addItem(empty)
+        } else {
+            for notebook in notebooks {
+                let item = NSMenuItem(title: notebook.name, action: #selector(openNotebook(_:)),
+                                      keyEquivalent: "", target: self)
+                item.representedObject = notebook.id.uuidString
+                item.toolTip = notebook.paths.joined(separator: "\n")
+                notebooksMenu.addItem(item)
+            }
+            notebooksMenu.addItem(.separator())
+            notebooksMenu.addItem(NSMenuItem(title: "Manage Notebooks…",
+                                             action: #selector(manageNotebooks),
+                                             keyEquivalent: "", target: self))
+        }
+        notebooksItem.submenu = notebooksMenu
+        menu.addItem(notebooksItem)
+        }
+
         menu.addItem(.separator())
 
         let emptyAll = NSMenuItem(title: "Empty All Dens", action: #selector(emptyAllDens), keyEquivalent: "", target: self)
@@ -199,6 +225,17 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func clearRecents() { RecentDensStore.shared.clear() }
     @objc private func emptyAllDens() { DenManager.shared.emptyAllDens() }
     @objc private func closeAllDens() { DenManager.shared.closeAllDens() }
+
+    @objc private func openNotebook(_ sender: NSMenuItem) {
+        guard let idString = sender.representedObject as? String,
+              let id = UUID(uuidString: idString),
+              let notebook = NotebookStore.shared.notebook(id: id) else { return }
+        let urls = notebook.existingURLs
+        guard !urls.isEmpty else { NSSound.beep(); return }
+        DenManager.shared.openAsk(with: urls)
+    }
+
+    @objc private func manageNotebooks() { NotebooksWindowController.showShared() }
 
     @objc private func showSettings() {
         if settingsPopover == nil {

@@ -32,4 +32,22 @@ public enum Paths {
     public static func clearStaging() {
         try? FileManager.default.removeItem(at: staging)
     }
+
+    /// Home for the on-device "Ask" search indices (chunk text, embedding
+    /// vectors, citation locators). Unlike `staging`, this is a durable cache:
+    /// re-asking about an already-indexed file must be instant, so it is **not**
+    /// cleared at launch. Created on first access.
+    public static var indices: URL {
+        let dir = appSupport.appendingPathComponent("Indices", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// Home for saved Notebooks (persistent document libraries). Durable;
+    /// not cleared at launch. Created on first access.
+    public static var notebooks: URL {
+        let dir = appSupport.appendingPathComponent("Notebooks", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
 }

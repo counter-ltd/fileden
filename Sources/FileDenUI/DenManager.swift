@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import FileDenCore
+import FileDenAI
 
 /// Owns every open den window and routes new-den / close-all requests to them.
 ///
@@ -13,6 +14,7 @@ import FileDenCore
 public class DenManager {
     public static let shared = DenManager()
     private var dens: [ShelfWindowController] = []
+    private var askWindows: [QAWindowController] = []
 
     private init() {
         NotificationCenter.default.addObserver(
@@ -33,6 +35,36 @@ public class DenManager {
                 self?.dens.removeAll { ObjectIdentifier($0) == id }
             }
         }
+
+        NotificationCenter.default.addObserver(
+            forName: .askAIRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            let urls = (note.object as? [URL]) ?? []
+            Task { @MainActor in self?.openAsk(with: urls) }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: .qaClosed,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let id = note.object as? ObjectIdentifier else { return }
+            MainActor.assumeIsolated {
+                self?.askWindows.removeAll { ObjectIdentifier($0) == id }
+            }
+        }
+    }
+
+    /// Open the offline Ask window for `urls`, filtered to searchable documents.
+    public func openAsk(with urls: [URL]) {
+        guard FileDenSettings.shared.aiEnabled else { return }
+        let searchable = urls.filter { TextExtractor.canExtract($0) }
+        guard !searchable.isEmpty else { NSSound.beep(); return }
+        let controller = QAWindowController(urls: searchable)
+        askWindows.append(controller)
+        controller.show()
     }
 
     /// Where a freshly-opened den should appear on screen.

@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import QuickLookUI
 import FileDenCore
+import FileDenAI
 
 struct ActionsMenuButton: NSViewRepresentable {
     var title: String? = nil
@@ -89,6 +90,15 @@ enum FileActions {
         let allArchives = urls.allSatisfy { isArchive($0) } && !urls.isEmpty
         let allPDFs = urls.allSatisfy { PDFTools.isPDF($0) } && !urls.isEmpty
         let allVideos = urls.allSatisfy { VideoConvert.isVideo($0) } && !urls.isEmpty
+        // Offer Ask whenever the feature is enabled and the selection contains at
+        // least one searchable file (the action filters to the supported subset).
+        let anyAskable = FileDenSettings.shared.aiEnabled && urls.contains { TextExtractor.canExtract($0) }
+
+        if anyAskable {
+            menu.addItem(item("Ask AI…", "sparkles",
+                              #selector(ActionBridge.askAI), bridge))
+            menu.addItem(.separator())
+        }
 
         menu.addItem(item("Open", "arrow.up.forward.app",
                           #selector(ActionBridge.openItems), bridge))
@@ -271,6 +281,11 @@ final class ActionBridge: NSObject {
         self.host = host
         self.onShare = onShare
         self.onRemove = onRemove
+    }
+
+    @objc func askAI() {
+        let searchable = urls.filter { TextExtractor.canExtract($0) }
+        NotificationCenter.default.post(name: .askAIRequested, object: searchable.isEmpty ? urls : searchable)
     }
 
     @objc func openItems() { urls.forEach { NSWorkspace.shared.open($0) } }

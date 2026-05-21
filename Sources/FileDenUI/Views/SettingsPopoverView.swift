@@ -1,5 +1,7 @@
 import SwiftUI
 import AppKit
+import FileDenCore
+import FileDenAI
 
 struct SettingsPopoverView: View {
     @ObservedObject private var settings = FileDenSettings.shared
@@ -33,6 +35,8 @@ struct SettingsPopoverView: View {
         switch selectedTab {
         case .settings:
             return AnyView(settingsTab)
+        case .intelligence:
+            return AnyView(intelligenceTab)
         case .permissions:
             return AnyView(permissionsTab)
         case .about:
@@ -52,6 +56,92 @@ struct SettingsPopoverView: View {
 
             activationSection
         }
+    }
+
+    // MARK: - Intelligence tab
+
+    private var intelligenceTab: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            settingRow(
+                title: "Enable Ask (offline AI)",
+                subtitle: "Search and ask questions about your documents — fully offline, on this Mac.",
+                isOn: $settings.aiEnabled
+            )
+
+            if settings.aiEnabled {
+                Divider()
+
+                settingRow(
+                    title: "Written answers",
+                    subtitle: "Summarize and answer in prose. Off shows the source passages only.",
+                    isOn: $settings.aiSynthesisEnabled
+                )
+
+                intelligenceStatus
+
+                Divider()
+
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Search index")
+                            .font(.system(size: 13))
+                        Text("Cached text and embeddings for indexed files.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Clear", action: clearIndex)
+                        .buttonStyle(.link)
+                        .font(.system(size: 12))
+                }
+            }
+        }
+        .animation(.easeInOut(duration: 0.15), value: settings.aiEnabled)
+    }
+
+    @ViewBuilder private var intelligenceStatus: some View {
+        let status = llmStatus
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: status.ok ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(status.ok ? .green : .orange)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(status.ok ? "On-device model ready" : "Written answers unavailable")
+                    .font(.system(size: 12, weight: .semibold))
+                Text(status.detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !status.ok {
+                    Button("Open System Settings", action: openIntelligenceSettings)
+                        .buttonStyle(.link)
+                        .font(.system(size: 11))
+                }
+            }
+            Spacer()
+        }
+    }
+
+    private var llmStatus: (ok: Bool, detail: String) {
+        if #available(macOS 26, *) {
+            if FoundationModelsAnswerProvider.isAvailable {
+                return (true, "Answers are written on-device with Apple Intelligence. Retrieval and citations work regardless.")
+            }
+            return (false, FoundationModelsAnswerProvider.unavailabilityReason
+                    ?? "The on-device model is unavailable. Ask still finds and cites source passages.")
+        }
+        return (false, "Written answers need macOS 26 with Apple Intelligence. Ask still finds and cites source passages.")
+    }
+
+    private func openIntelligenceSettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.AppleIntelligence-Settings.extension")
+            ?? URL(string: "x-apple.systempreferences:")!
+        NSWorkspace.shared.open(url)
+    }
+
+    private func clearIndex() {
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(at: Paths.indices, includingPropertiesForKeys: nil) else { return }
+        for item in items { try? fm.removeItem(at: item) }
     }
 
     private var permissionsTab: some View {
@@ -276,6 +366,7 @@ struct SettingsPopoverView: View {
 
     private enum SettingsTab: String, CaseIterable, Identifiable {
         case settings
+        case intelligence
         case permissions
         case about
 
@@ -284,6 +375,7 @@ struct SettingsPopoverView: View {
         var title: String {
             switch self {
             case .settings: return "Settings"
+            case .intelligence: return "AI"
             case .permissions: return "Permissions"
             case .about: return "About"
             }
