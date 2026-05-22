@@ -29,6 +29,8 @@ struct ShelfView: View {
     /// window controller can make the panel key for text input.
     var onAskModeChanged: ((Bool) -> Void)? = nil
     var initialURLs: [URL] = []
+    /// Open in the expanded grid immediately (used for screenshots).
+    var initiallyExpanded: Bool = false
 
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var settings = FileDenSettings.shared
@@ -126,6 +128,7 @@ struct ShelfView: View {
             if items.isEmpty && !initialURLs.isEmpty {
                 items = initialURLs.map { ShelfItem(url: $0) }
             }
+            if initiallyExpanded { isExpanded = true }
             onEmpty? {
                 if !items.isEmpty {
                     RecentDensStore.shared.record(urls: items.map(\.url))

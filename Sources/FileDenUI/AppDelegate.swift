@@ -10,6 +10,11 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     private var instanceLockFD: Int32 = -1
 
     public func applicationWillFinishLaunching(_ notification: Notification) {
+        // appstage capture builds skip the single-instance lock so they can run
+        // alongside a real FileDen. Compiled out of normal/release builds.
+        #if APPSTAGE
+        if AppStageCapture.state != nil { return }
+        #endif
         // Single instance only. A file lock is the race-safe source of truth:
         // `flock` is atomic, so exactly one process can hold it — two launches
         // racing at the same instant can't both bow out (a symmetric "is another
@@ -49,6 +54,15 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
+        // appstage screenshot mode: render one state on-screen (synthetic den /
+        // chat) and wait to be captured. Skips the status item and all live
+        // services. Compiled in only for capture builds (-DAPPSTAGE).
+        #if APPSTAGE
+        if let state = AppStageCapture.state {
+            AppStageCapture.run(state: state)
+            return
+        }
+        #endif
         // Clear any staging left over from a previous session before any tool
         // writes new output. Safe here: the instance lock means we're the only
         // FileDen running, so nothing is mid-operation.

@@ -32,6 +32,17 @@ final class QASession: ObservableObject {
         startIndexing()
     }
 
+#if APPSTAGE
+    /// Capture-only: a ready session with a pre-built transcript, no indexing or
+    /// LLM. Compiled out of normal/release builds.
+    init(demoMessages: [ChatMessage], fileCount: Int) {
+        self.urls = []
+        self.fileCount = fileCount
+        self.messages = demoMessages
+        self.phase = .ready
+    }
+#endif
+
     var hasMessages: Bool { !messages.isEmpty }
 
     var modelLabel: String {

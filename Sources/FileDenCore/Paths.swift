@@ -9,6 +9,24 @@ import Foundation
 /// (Settings and the recents list still live in `UserDefaults`; this is the home
 /// for actual files the app produces.)
 public enum Paths {
+#if APPSTAGE
+    /// Capture-only build (appstage screenshots). Storage is forced to a
+    /// throwaway directory so a capture run never reads or writes the user's real
+    /// files, indices, or notebooks. Compiled out of normal/release builds.
+    public static let appSupport: URL = {
+        let fm = FileManager.default
+        let dir: URL
+        if let override = ProcessInfo.processInfo.environment["FILEDEN_STATE_DIR"],
+           !override.isEmpty {
+            dir = URL(fileURLWithPath: override, isDirectory: true)
+        } else {
+            dir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+                .appendingPathComponent("fileden-appstage", isDirectory: true)
+        }
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+#else
     /// The app's storage root. Created on first access.
     public static let appSupport: URL = {
         let base = FileManager.default
@@ -17,6 +35,7 @@ public enum Paths {
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         return base
     }()
+#endif
 
     /// Scratch space for files produced by tools (PDF ops, conversions, archives)
     /// before the user files them away. It lives under the app root rather than

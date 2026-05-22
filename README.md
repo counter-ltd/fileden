@@ -28,6 +28,14 @@
 
 ---
 
+## Screenshots
+
+<div align="center">
+<img src="Resources/screenshots/shelf-framed.png" width="320" alt="A den of stashed files"> <img src="Resources/screenshots/ask-framed.png" width="320" alt="Ask — chat with your documents">
+</div>
+
+---
+
 ## What it is
 
 FileDen is a tiny floating window — a "den" — that holds files while you move them between apps, archives, uploads, and conversations. Drag in. Drag out. Drop a folder, get a zip. Shake your mouse, get a fresh den near the cursor. Hit a hotkey, same. Close it, the contents go to recents.
