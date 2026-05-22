@@ -31,6 +31,10 @@ struct ShelfView: View {
     var initialURLs: [URL] = []
     /// Open in the expanded grid immediately (used for screenshots).
     var initiallyExpanded: Bool = false
+    /// Show the drop-target highlight immediately (used for screenshots).
+    var initiallyTargeted: Bool = false
+    /// Start in list mode instead of grid (used for screenshots).
+    var initialViewMode: ExpandedViewMode = .grid
 
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var settings = FileDenSettings.shared
@@ -129,6 +133,8 @@ struct ShelfView: View {
                 items = initialURLs.map { ShelfItem(url: $0) }
             }
             if initiallyExpanded { isExpanded = true }
+            if initiallyTargeted { isTargeted = true }
+            if initialViewMode == .list { viewMode = .list }
             onEmpty? {
                 if !items.isEmpty {
                     RecentDensStore.shared.record(urls: items.map(\.url))

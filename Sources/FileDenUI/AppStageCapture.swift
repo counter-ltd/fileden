@@ -30,11 +30,29 @@ enum AppStageCapture {
 
         let cornerRadius: CGFloat
         let inner: AnyView
-        if state == "ask" {
+        switch state {
+        case "ask":
             let session = QASession(demoMessages: demoMessages(), fileCount: 3)
             inner = AnyView(QAView(session: session).frame(width: 440, height: 430))
             cornerRadius = 16
-        } else {
+        case "compact":
+            inner = AnyView(ShelfView(initialURLs: demoFiles(), initiallyExpanded: false))
+            cornerRadius = 24
+        case "drop":
+            inner = AnyView(ShelfView(initialURLs: demoFiles(), initiallyExpanded: true,
+                                      initiallyTargeted: true))
+            cornerRadius = 24
+        case "list":
+            inner = AnyView(ShelfView(initialURLs: demoFiles(), initiallyExpanded: true,
+                                      initialViewMode: .list))
+            cornerRadius = 24
+        case "pdf":
+            inner = AnyView(ShelfView(initialURLs: pdfFiles(), initiallyExpanded: true))
+            cornerRadius = 24
+        case "convert":
+            inner = AnyView(ShelfView(initialURLs: mediaFiles(), initiallyExpanded: true))
+            cornerRadius = 24
+        default: // "shelf"
             inner = AnyView(ShelfView(initialURLs: demoFiles(), initiallyExpanded: true))
             cornerRadius = 24
         }
@@ -89,12 +107,25 @@ enum AppStageCapture {
     // Throwaway placeholder files (real, empty) so the den shows proper type
     // icons via NSWorkspace without referencing any of the user's files.
     private static func demoFiles() -> [URL] {
+        placeholders(["Q3 Report.pdf", "Brand Moodboard.png", "Contract.docx",
+                       "Release Notes.md", "assets.zip"])
+    }
+
+    // A spread of PDF documents — triggers PDF Tools in the actions menu.
+    private static func pdfFiles() -> [URL] {
+        placeholders(["Annual Report.pdf", "Brand Guide.pdf",
+                       "Press Kit.pdf", "Product Spec.pdf"])
+    }
+
+    // A spread of image + video files — triggers Convert Image / Convert Video.
+    private static func mediaFiles() -> [URL] {
+        placeholders(["hero.png", "product-shot.jpg", "walkthrough.mov",
+                       "banner.webp", "thumbnail.heic"])
+    }
+
+    private static func placeholders(_ names: [String]) -> [URL] {
         let dir = Paths.appSupport.appendingPathComponent("DemoFiles", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let names = [
-            "Q3 Report.pdf", "Brand Moodboard.png", "Contract.docx",
-            "Release Notes.md", "assets.zip",
-        ]
         return names.map { name in
             let url = dir.appendingPathComponent(name)
             if !FileManager.default.fileExists(atPath: url.path) {
