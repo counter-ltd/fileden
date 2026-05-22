@@ -116,7 +116,12 @@ struct SettingsPopoverView: View {
 
             let selected = LLMConfiguration.Provider(rawValue: settings.llmProvider) ?? .appleIntelligence
 
-            if selected == .appleIntelligence {
+            if selected == .none {
+                Text("Document search only — AI written answers are disabled.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if selected == .appleIntelligence {
                 intelligenceStatus
             } else {
                 httpProviderFields(for: selected)

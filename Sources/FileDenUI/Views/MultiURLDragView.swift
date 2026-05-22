@@ -7,6 +7,8 @@ import AppKit
 struct MultiURLDragView: NSViewRepresentable {
     let urls: () -> [URL]
     var onTap: (NSEvent.ModifierFlags) -> Void = { _ in }
+    /// Fired on a double-click (no modifiers), e.g. to open the item.
+    var onDoubleClick: () -> Void = {}
     /// Right-click / control-click contextual menu provider. Receives the overlay
     /// view so the menu can use it as a host (e.g. positioning a share picker).
     /// Nil means no contextual menu.
@@ -16,6 +18,7 @@ struct MultiURLDragView: NSViewRepresentable {
         let v = DragCaptureView()
         v.urls = urls
         v.onTap = onTap
+        v.onDoubleClick = onDoubleClick
         v.menuProvider = menu
         return v
     }
@@ -23,6 +26,7 @@ struct MultiURLDragView: NSViewRepresentable {
     func updateNSView(_ nsView: DragCaptureView, context: Context) {
         nsView.urls = urls
         nsView.onTap = onTap
+        nsView.onDoubleClick = onDoubleClick
         nsView.menuProvider = menu
     }
 }
@@ -30,6 +34,7 @@ struct MultiURLDragView: NSViewRepresentable {
 final class DragCaptureView: NSView, NSDraggingSource {
     var urls: () -> [URL] = { [] }
     var onTap: (NSEvent.ModifierFlags) -> Void = { _ in }
+    var onDoubleClick: () -> Void = {}
     var menuProvider: ((NSView) -> NSMenu?)? = nil
 
     private var downPointInWindow: NSPoint?
@@ -92,7 +97,11 @@ final class DragCaptureView: NSView, NSDraggingSource {
 
     override func mouseUp(with event: NSEvent) {
         if !didStartDrag {
-            onTap(downModifiers)
+            if event.clickCount >= 2 && downModifiers.isEmpty {
+                onDoubleClick()
+            } else {
+                onTap(downModifiers)
+            }
         }
         downPointInWindow = nil
         downEvent = nil
@@ -104,6 +113,22 @@ final class DragCaptureView: NSView, NSDraggingSource {
         sourceOperationMaskFor context: NSDraggingContext
     ) -> NSDragOperation {
         context == .outsideApplication ? [.copy, .move, .link, .generic] : []
+    }
+}
+
+/// Reports the hosting `NSWindow` once the view is in the hierarchy. Used to
+/// scope window-wide key monitors to the den that owns them.
+struct WindowAccessor: NSViewRepresentable {
+    let onResolve: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        DispatchQueue.main.async { onResolve(v.window) }
+        return v
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async { onResolve(nsView.window) }
     }
 }
 

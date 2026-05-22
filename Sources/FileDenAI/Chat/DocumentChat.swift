@@ -56,11 +56,27 @@ public final class DocumentChat: @unchecked Sendable {
                 let citations = retrieve(question, topK)
                 continuation.yield(.citations(citations))
 
-                let useHTTP = config.provider != .appleIntelligence
+                let useHTTP = config.provider != .appleIntelligence && config.provider != .none
                 let hasPDFs = documentURLs.contains { $0.pathExtension.lowercased() == "pdf" }
                 let isPDFAction = pdfAction != nil && hasPDFs && Self.needsPDFAction(question)
-                guard synthesize, !citations.isEmpty || isPDFAction,
-                      Intelligence.isAvailable || useHTTP else {
+
+                // "none" = intentionally no LLM: show passages only without error.
+                if config.provider == .none {
+                    continuation.yield(.completed(text: Self.fallbackText(citations), mode: .passagesOnly, svg: nil))
+                    continuation.finish()
+                    return
+                }
+
+                // Apple Intelligence selected but unavailable: surface the error.
+                if config.provider == .appleIntelligence && !Intelligence.isAvailable {
+                    let msg = Intelligence.unavailabilityReason
+                        ?? "Apple Intelligence is not available on this Mac."
+                    continuation.yield(.completed(text: msg, mode: .passagesOnly, svg: nil))
+                    continuation.finish()
+                    return
+                }
+
+                guard synthesize, !citations.isEmpty || isPDFAction else {
                     continuation.yield(.completed(text: Self.fallbackText(citations), mode: .passagesOnly, svg: nil))
                     continuation.finish()
                     return
@@ -85,7 +101,7 @@ public final class DocumentChat: @unchecked Sendable {
                         let (text, mode, svg) = Self.processResponse(last, citations: citations)
                         continuation.yield(.completed(text: text, mode: mode, svg: svg))
                     } catch {
-                        continuation.yield(.completed(text: Self.fallbackText(citations), mode: .passagesOnly, svg: nil))
+                        continuation.yield(.completed(text: Self.errorText(error), mode: .passagesOnly, svg: nil))
                     }
                     continuation.finish()
                     return
@@ -135,6 +151,22 @@ public final class DocumentChat: @unchecked Sendable {
         citations.isEmpty
             ? "I couldn't find anything about that in these documents."
             : "Here are the most relevant passages I found:"
+    }
+
+    static func errorText(_ error: Error) -> String {
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .badURL:
+                return "The configured endpoint URL is invalid. Check the Base URL in AI settings."
+            case .badServerResponse:
+                return "The server returned an error. Check the model name and API key in AI settings."
+            case .cannotConnectToHost, .networkConnectionLost, .notConnectedToInternet, .timedOut:
+                return "Could not reach the AI server. Make sure it is running and the URL is correct."
+            default:
+                return "AI request failed: \(urlError.localizedDescription)"
+            }
+        }
+        return "AI request failed: \(error.localizedDescription)"
     }
 
     /// Parse any graph spec from the model's response, generate SVG, and strip the tag.

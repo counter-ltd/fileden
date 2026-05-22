@@ -36,20 +36,36 @@ final class QASession: ObservableObject {
 
     var modelLabel: String {
         let config = FileDenSettings.shared.llmConfiguration
-        if config.provider == .appleIntelligence { return "Apple Intelligence" }
-        return config.model.isEmpty ? config.provider.displayName : config.model
+        switch config.provider {
+        case .none:              return "None"
+        case .appleIntelligence: return "Apple Intelligence"
+        default:                 return config.model.isEmpty ? config.provider.displayName : config.model
+        }
     }
 
     var llmAvailable: Bool {
-        let provider = LLMConfiguration.Provider(rawValue: FileDenSettings.shared.llmProvider)
-            ?? .appleIntelligence
-        return provider == .appleIntelligence ? Intelligence.isAvailable : true
+        guard let provider = LLMConfiguration.Provider(rawValue: FileDenSettings.shared.llmProvider) else {
+            return false
+        }
+        switch provider {
+        case .none:              return false
+        case .appleIntelligence: return Intelligence.isAvailable
+        case .openAI, .ollama, .llamaCpp: return true
+        }
     }
 
     var llmUnavailableNote: String? {
-        let provider = LLMConfiguration.Provider(rawValue: FileDenSettings.shared.llmProvider)
-            ?? .appleIntelligence
-        return provider == .appleIntelligence ? Intelligence.unavailabilityReason : nil
+        guard let provider = LLMConfiguration.Provider(rawValue: FileDenSettings.shared.llmProvider) else {
+            return nil
+        }
+        switch provider {
+        case .none:
+            return "No AI model selected. Choose a model in AI settings to enable written answers."
+        case .appleIntelligence:
+            return Intelligence.unavailabilityReason
+        default:
+            return nil
+        }
     }
 
     // MARK: - Indexing

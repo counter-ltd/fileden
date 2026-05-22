@@ -9,6 +9,8 @@ public struct LLMConfiguration: Sendable, Equatable {
         case openAI            = "openai"
         case ollama            = "ollama"
         case llamaCpp          = "llamacpp"
+        /// No LLM — document search and passage retrieval only.
+        case none              = "none"
 
         public var displayName: String {
             switch self {
@@ -16,6 +18,7 @@ public struct LLMConfiguration: Sendable, Equatable {
             case .openAI:            "OpenAI"
             case .ollama:            "Ollama"
             case .llamaCpp:          "llama.cpp"
+            case .none:              "None"
             }
         }
 
@@ -25,6 +28,7 @@ public struct LLMConfiguration: Sendable, Equatable {
             case .openAI:            "https://api.openai.com/v1"
             case .ollama:            "http://localhost:11434/v1"
             case .llamaCpp:          "http://localhost:8080/v1"
+            case .none:              ""
             }
         }
 
@@ -34,6 +38,7 @@ public struct LLMConfiguration: Sendable, Equatable {
             case .openAI:            "gpt-4o-mini"
             case .ollama:            "llama3.2"
             case .llamaCpp:          "default"
+            case .none:              ""
             }
         }
 

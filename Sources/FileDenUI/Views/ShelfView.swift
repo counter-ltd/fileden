@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import AppKit
+import QuickLookUI
 import FileDenCore
 import FileDenAI
 
@@ -36,6 +37,8 @@ struct ShelfView: View {
     @State private var isHovered = false
     @State private var isDragging = false
     @State private var dragMonitor: Any?
+    @State private var keyMonitor: Any?
+    @State private var hostWindow: NSWindow?
     @State private var isExpanded = false
     @State private var showShareDialog = false
     @State private var itemsDealt = false
@@ -96,8 +99,9 @@ struct ShelfView: View {
             RoundedRectangle(cornerRadius: 24)
                 .strokeBorder(isTargeted ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 2)
         )
-        .onAppear { startDragMonitor() }
-        .onDisappear { stopDragMonitor() }
+        .background(WindowAccessor { hostWindow = $0 })
+        .onAppear { startDragMonitor(); startKeyMonitor() }
+        .onDisappear { stopDragMonitor(); stopKeyMonitor() }
         .onChange(of: items.isEmpty) { _, empty in onItemsChanged?(empty) }
         .onChange(of: items.map(\.url)) { _, urls in onURLsChanged?(urls) }
         .clipShape(RoundedRectangle(cornerRadius: 24))
@@ -279,6 +283,7 @@ struct ShelfView: View {
                                     isSelected: selection.contains(item.id),
                                     onRemove: { remove(item) },
                                     onClick: { mods in handleSelectionClick(item: item, modifiers: mods) },
+                                    onOpen: { NSWorkspace.shared.open(item.url) },
                                     dragURLs: { dragURLs(for: item) },
                                     actionsMenu: { host in actionsMenu(for: item, host: host) }
                                 )
@@ -300,6 +305,7 @@ struct ShelfView: View {
                                     isSelected: selection.contains(item.id),
                                     onRemove: { remove(item) },
                                     onClick: { mods in handleSelectionClick(item: item, modifiers: mods) },
+                                    onOpen: { NSWorkspace.shared.open(item.url) },
                                     dragURLs: { dragURLs(for: item) },
                                     actionsMenu: { host in actionsMenu(for: item, host: host) }
                                 )
@@ -494,7 +500,8 @@ struct ShelfView: View {
                     .overlay(
                         MultiURLDragView(
                             urls: { items.map(\.url) },
-                            onTap: { _ in withAnimation { isExpanded = true } }
+                            onTap: { _ in withAnimation { isExpanded = true } },
+                            menu: { host in compactActionsMenu(host: host) }
                         )
                     )
             } else {
@@ -502,7 +509,8 @@ struct ShelfView: View {
                     .overlay(
                         MultiURLDragView(
                             urls: { items.map(\.url) },
-                            onTap: { _ in withAnimation { isExpanded = true } }
+                            onTap: { _ in withAnimation { isExpanded = true } },
+                            menu: { host in compactActionsMenu(host: host) }
                         )
                     )
             }
@@ -635,6 +643,18 @@ struct ShelfView: View {
         }
         return FileActions.buildMenu(
             for: targets,
+            host: host,
+            onShare: { view in shareAll(from: view) },
+            onRemove: { removed in removeURLs(removed) },
+            onRemoveFromDen: { removed in removeURLs(removed) }
+        )
+    }
+
+    /// Right-click menu for the compact preview, which has no per-item selection:
+    /// acts on every file in the den (the single file, or the whole stack).
+    private func compactActionsMenu(host: NSView) -> NSMenu {
+        FileActions.buildMenu(
+            for: items.map(\.url),
             host: host,
             onShare: { view in shareAll(from: view) },
             onRemove: { removed in removeURLs(removed) },
@@ -811,6 +831,43 @@ struct ShelfView: View {
             dragMonitor = nil
         }
     }
+
+    /// Space bar → Quick Look the current selection, mirroring Finder. Scoped to
+    /// this den's window, and suppressed while typing (e.g. the Ask field).
+    private func startKeyMonitor() {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+            guard event.keyCode == 49,                       // space
+                  !event.modifierFlags.contains(.command)
+            else { return event }
+
+            // Space while the Quick Look panel is focused → close it (toggle).
+            if QLPreviewPanel.sharedPreviewPanelExists(),
+               let panel = QLPreviewPanel.shared(),
+               event.window === panel {
+                panel.orderOut(nil)
+                return nil
+            }
+
+            // Space in this den's expanded view → open the preview.
+            guard isExpanded,
+                  let host = hostWindow, event.window === host,
+                  !(host.firstResponder is NSText)           // not editing text
+            else { return event }
+            quickLookSelection()
+            return nil                                       // swallow the space
+        }
+    }
+
+    private func stopKeyMonitor() {
+        if let monitor = keyMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyMonitor = nil
+        }
+    }
+
+    private func quickLookSelection() {
+        QuickLookController.shared.preview(selectedItems.map(\.url))
+    }
 }
 
 // MARK: - Expanded item
@@ -820,6 +877,7 @@ struct ExpandedItemView: View {
     let isSelected: Bool
     let onRemove: () -> Void
     let onClick: (NSEvent.ModifierFlags) -> Void
+    let onOpen: () -> Void
     let dragURLs: () -> [URL]
     let actionsMenu: (NSView) -> NSMenu?
     @State private var isHovered = false
@@ -849,7 +907,7 @@ struct ExpandedItemView: View {
                             .padding(-6)
                     )
                     .overlay(
-                        MultiURLDragView(urls: dragURLs, onTap: onClick, menu: actionsMenu)
+                        MultiURLDragView(urls: dragURLs, onTap: onClick, onDoubleClick: onOpen, menu: actionsMenu)
                     )
 
                 if isHovered {
@@ -892,6 +950,7 @@ struct ExpandedListRowView: View {
     let isSelected: Bool
     let onRemove: () -> Void
     let onClick: (NSEvent.ModifierFlags) -> Void
+    let onOpen: () -> Void
     let dragURLs: () -> [URL]
     let actionsMenu: (NSView) -> NSMenu?
     @State private var isHovered = false
@@ -930,7 +989,7 @@ struct ExpandedListRowView: View {
                         .strokeBorder(Color.accentColor.opacity(isSelected ? 0.8 : 0), lineWidth: 1.5)
                 )
         )
-        .overlay(MultiURLDragView(urls: dragURLs, onTap: onClick, menu: actionsMenu))
+        .overlay(MultiURLDragView(urls: dragURLs, onTap: onClick, onDoubleClick: onOpen, menu: actionsMenu))
         .onHover { h in withAnimation(.easeInOut(duration: 0.15)) { isHovered = h } }
     }
 

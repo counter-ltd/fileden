@@ -148,8 +148,9 @@ enum FileActions {
         if allImages {
             menu.addItem(item("Set as Wallpaper", "photo.on.rectangle",
                               #selector(ActionBridge.wallpaper), bridge))
-            menu.addItem(item("Combine to PDF", "doc.badge.plus",
+            menu.addItem(item(urls.count > 1 ? "Combine to PDF" : "Convert to PDF", "doc.badge.plus",
                               #selector(ActionBridge.combinePDF), bridge))
+            menu.addItem(convertToDocumentMenu(bridge: bridge))
             if let convert = convertImageMenu(bridge: bridge, urls: urls) {
                 menu.addItem(convert)
             }
@@ -203,9 +204,31 @@ enum FileActions {
                          #selector(ActionBridge.extractPDFImages), bridge))
         sub.addItem(item("Extract Text", "doc.plaintext",
                          #selector(ActionBridge.extractPDFText), bridge))
+        sub.addItem(.separator())
+        sub.addItem(convertToDocumentMenu(bridge: bridge))
 
         let parent = NSMenuItem(title: "PDF Tools", action: nil, keyEquivalent: "")
         parent.image = NSImage(systemSymbolName: "doc.richtext", accessibilityDescription: nil)
+        parent.submenu = sub
+        return parent
+    }
+
+    /// "Convert to Document" submenu — Searchable keeps the scan and adds an
+    /// invisible text layer; Searchable (Cleaned) also deskews/whitens/sharpens;
+    /// Precise preserves spatial layout and rotation; Formatted reflows
+    /// everything into clean body text.
+    private static func convertToDocumentMenu(bridge: ActionBridge) -> NSMenuItem {
+        let sub = NSMenu()
+        sub.addItem(item("Searchable", "doc.text.magnifyingglass",
+                         #selector(ActionBridge.digitizeSearchable), bridge))
+        sub.addItem(item("Searchable (Cleaned)", "wand.and.stars",
+                         #selector(ActionBridge.digitizeSearchableClean), bridge))
+        sub.addItem(item("Precise", "scope",
+                         #selector(ActionBridge.digitize), bridge))
+        sub.addItem(item("Formatted", "text.alignleft",
+                         #selector(ActionBridge.digitizeFormatted), bridge))
+        let parent = NSMenuItem(title: "Convert to Document", action: nil, keyEquivalent: "")
+        parent.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: nil)
         parent.submenu = sub
         return parent
     }
@@ -457,6 +480,10 @@ final class ActionBridge: NSObject {
     @objc func exportPDFImages() { runStaged("Exporting pages") { url, _ in PDFTools.exportPageImages([url]) } }
     @objc func extractPDFImages(){ runStaged("Extracting images") { url, _ in PDFTools.extractImages([url]) } }
     @objc func extractPDFText()  { runStaged("Extracting text") { url, _ in PDFTools.extractText([url]) } }
+    @objc func digitizeSearchable()      { runStaged("Making searchable") { url, progress in PDFTools.digitizeSearchable([url], cleanup: .none, progress: progress) } }
+    @objc func digitizeSearchableClean() { runStaged("Cleaning & OCR")    { url, progress in PDFTools.digitizeSearchable([url], cleanup: .enhance, progress: progress) } }
+    @objc func digitize()          { runStaged("Converting (precise)") { url, progress in PDFTools.digitize([url], progress: progress) } }
+    @objc func digitizeFormatted() { runStaged("Formatting document")  { url, progress in PDFTools.digitizeFormatted([url], progress: progress) } }
     @objc func combinePDF()      { runStaged("Creating PDF", batch: PDFTools.combineToPDF) }
 
     // MARK: - Image conversion
