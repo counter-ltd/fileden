@@ -389,6 +389,7 @@ struct ShelfView: View {
                     urls: { selectedItems.map(\.url) },
                     onShare: { view in shareAll(from: view) },
                     onRemove: { removed in removeURLs(removed) },
+                    onExpand: { dirs, recursive in expandIntoDen(dirs, recursive: recursive) },
                     onAsk: { urls in enterAsk(urls: urls) },
                     onEdit: { urls in if let u = urls.first { enterEdit(url: u) } }
                 )
@@ -620,6 +621,7 @@ struct ShelfView: View {
                 urls: { selectedItems.map(\.url) },
                 onShare: { view in shareAll(from: view) },
                 onRemove: { removed in removeURLs(removed) },
+                onExpand: { dirs, recursive in expandIntoDen(dirs, recursive: recursive) },
                 onAsk: { urls in enterAsk(urls: urls) },
                 onEdit: { urls in if let u = urls.first { enterEdit(url: u) } }
             )
@@ -674,6 +676,38 @@ struct ShelfView: View {
                 withAnimation { isEditing = false }
             }
         }
+    }
+
+    /// Replace one or more folder tiles with their contents: the folders leave
+    /// the den and everything inside takes their place. `recursive` flattens the
+    /// whole tree (sub-folders, their sub-folders, and so on); otherwise just the
+    /// immediate children move in. Folders that turn out to be empty (or
+    /// unreadable) are left untouched; if nothing can be expanded we beep.
+    private func expandIntoDen(_ directories: [URL], recursive: Bool) {
+        var toRemove: [URL] = []
+        var contents: [URL] = []
+        for dir in directories {
+            let inside = dir.expandedContents(recursive: recursive)
+            guard !inside.isEmpty else { continue }
+            toRemove.append(dir)
+            contents += inside
+        }
+        guard !toRemove.isEmpty else { NSSound.beep(); return }
+
+        let removeSet = Set(toRemove)
+        let removedIDs = items.filter { removeSet.contains($0.url) }.map(\.id)
+        withAnimation {
+            items.removeAll { removeSet.contains($0.url) }
+            var seen = Set(items.map(\.url))
+            for url in contents where seen.insert(url).inserted {
+                items.append(ShelfItem(url: url))
+            }
+        }
+        for id in removedIDs {
+            selection.remove(id)
+            if selectionAnchor == id { selectionAnchor = nil }
+        }
+        onItemsReceived?()
     }
 
     /// When a staged file is dragged *out* of the den, drop its tile — but only
@@ -779,6 +813,7 @@ struct ShelfView: View {
             onShare: { view in shareAll(from: view) },
             onRemove: { removed in removeURLs(removed) },
             onRemoveFromDen: { removed in removeURLs(removed) },
+            onExpand: { dirs, recursive in expandIntoDen(dirs, recursive: recursive) },
             onEdit: { urls in if let u = urls.first { enterEdit(url: u) } }
         )
     }
@@ -792,6 +827,7 @@ struct ShelfView: View {
             onShare: { view in shareAll(from: view) },
             onRemove: { removed in removeURLs(removed) },
             onRemoveFromDen: { removed in removeURLs(removed) },
+            onExpand: { dirs, recursive in expandIntoDen(dirs, recursive: recursive) },
             onEdit: { urls in if let u = urls.first { enterEdit(url: u) } }
         )
     }

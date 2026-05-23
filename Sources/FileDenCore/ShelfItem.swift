@@ -29,4 +29,45 @@ public extension URL {
         guard let v = try? resourceValues(forKeys: keys) else { return nil }
         return v.isDirectory == true ? v.totalFileAllocatedSize : v.fileSize
     }
+
+    /// The children of this directory, as they should appear once expanded into
+    /// a den. Hidden entries (dotfiles, `.DS_Store`) are always skipped, and
+    /// bundles (`.app`, `.key`, …) are treated as opaque leaves rather than
+    /// folders to descend into. Returns an empty array if this isn't a readable
+    /// directory.
+    ///
+    /// - When `recursive` is false: the immediate children, both files and
+    ///   subfolders, sorted by name.
+    /// - When `recursive` is true: every leaf in the whole tree — files and
+    ///   bundles from this folder and all of its sub-, sub-sub-folders, etc. —
+    ///   flattened, with the intermediate folders themselves dropped.
+    func expandedContents(recursive: Bool) -> [URL] {
+        let fm = FileManager.default
+        guard isDirectoryItem else { return [] }
+
+        if !recursive {
+            let children = (try? fm.contentsOfDirectory(
+                at: self,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles])) ?? []
+            return children.sorted {
+                $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+            }
+        }
+
+        guard let walker = fm.enumerator(
+            at: self,
+            includingPropertiesForKeys: [.isDirectoryKey, .isPackageKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { return [] }
+
+        var leaves: [URL] = []
+        for case let url as URL in walker {
+            let vals = try? url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+            let isFolder = vals?.isDirectory ?? false
+            let isPackage = vals?.isPackage ?? false
+            // Keep files and opaque bundles; plain folders are walked but not kept.
+            if !isFolder || isPackage { leaves.append(url) }
+        }
+        return leaves
+    }
 }

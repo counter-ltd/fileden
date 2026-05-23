@@ -9,6 +9,9 @@ struct ActionsMenuButton: NSViewRepresentable {
     let urls: () -> [URL]
     let onShare: (NSView) -> Void
     let onRemove: ([URL]) -> Void
+    /// Called when "Expand into Den" is chosen, with the selected directories and
+    /// whether the expansion should recurse into sub-folders.
+    var onExpand: (([URL], Bool) -> Void)? = nil
     /// Called when "Ask AI…" is chosen, so the owning den can open Ask inline.
     var onAsk: (([URL]) -> Void)? = nil
     /// Called when "Edit Image…" is chosen, so the owning den can open the editor inline.
@@ -46,29 +49,34 @@ struct ActionsMenuButton: NSViewRepresentable {
         context.coordinator.urls = urls
         context.coordinator.onShare = onShare
         context.coordinator.onRemove = onRemove
+        context.coordinator.onExpand = onExpand
         context.coordinator.onAsk = onAsk
         context.coordinator.onEdit = onEdit
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(urls: urls, onShare: onShare, onRemove: onRemove, onAsk: onAsk, onEdit: onEdit)
+        Coordinator(urls: urls, onShare: onShare, onRemove: onRemove,
+                    onExpand: onExpand, onAsk: onAsk, onEdit: onEdit)
     }
 
     final class Coordinator: NSObject {
         var urls: () -> [URL]
         var onShare: (NSView) -> Void
         var onRemove: ([URL]) -> Void
+        var onExpand: (([URL], Bool) -> Void)?
         var onAsk: (([URL]) -> Void)?
         var onEdit: (([URL]) -> Void)?
 
         init(urls: @escaping () -> [URL],
              onShare: @escaping (NSView) -> Void,
              onRemove: @escaping ([URL]) -> Void,
+             onExpand: (([URL], Bool) -> Void)? = nil,
              onAsk: (([URL]) -> Void)? = nil,
              onEdit: (([URL]) -> Void)? = nil) {
             self.urls = urls
             self.onShare = onShare
             self.onRemove = onRemove
+            self.onExpand = onExpand
             self.onAsk = onAsk
             self.onEdit = onEdit
         }
@@ -81,6 +89,7 @@ struct ActionsMenuButton: NSViewRepresentable {
                 host: sender,
                 onShare: onShare,
                 onRemove: onRemove,
+                onExpand: onExpand,
                 onAsk: onAsk,
                 onEdit: onEdit
             )
@@ -98,13 +107,14 @@ enum FileActions {
         onShare: @escaping (NSView) -> Void,
         onRemove: @escaping ([URL]) -> Void,
         onRemoveFromDen: (([URL]) -> Void)? = nil,
+        onExpand: ((_ directories: [URL], _ recursive: Bool) -> Void)? = nil,
         onAsk: (([URL]) -> Void)? = nil,
         onEdit: (([URL]) -> Void)? = nil
     ) -> NSMenu {
         let menu = NSMenu()
         let bridge = ActionBridge(urls: urls, host: host, onShare: onShare,
                                   onRemove: onRemove, onRemoveFromDen: onRemoveFromDen,
-                                  onAsk: onAsk, onEdit: onEdit)
+                                  onExpand: onExpand, onAsk: onAsk, onEdit: onEdit)
         objc_setAssociatedObject(menu, &ActionBridge.assocKey, bridge, .OBJC_ASSOCIATION_RETAIN)
 
         let hasDir = urls.contains { isDirectory($0) }
@@ -169,6 +179,16 @@ enum FileActions {
                           #selector(ActionBridge.share), bridge))
 
         menu.addItem(.separator())
+
+        // Replace a folder tile with its contents. Only meaningful for
+        // directories, and only when the owning den can take new items.
+        if hasDir, onExpand != nil {
+            menu.addItem(item("Expand into Den", "arrow.up.left.and.arrow.down.right",
+                              #selector(ActionBridge.expandIntoDen), bridge))
+            menu.addItem(item("Expand into Den Recursively", "square.stack.3d.up",
+                              #selector(ActionBridge.expandIntoDenRecursively), bridge))
+            menu.addItem(.separator())
+        }
 
         if onRemoveFromDen != nil {
             menu.addItem(item("Remove from Den", "minus.circle",
@@ -349,6 +369,7 @@ final class ActionBridge: NSObject {
     let onShare: (NSView) -> Void
     let onRemove: ([URL]) -> Void
     let onRemoveFromDen: (([URL]) -> Void)?
+    let onExpand: (([URL], Bool) -> Void)?
     let onAsk: (([URL]) -> Void)?
     let onEdit: (([URL]) -> Void)?
 
@@ -356,6 +377,7 @@ final class ActionBridge: NSObject {
          onShare: @escaping (NSView) -> Void,
          onRemove: @escaping ([URL]) -> Void,
          onRemoveFromDen: (([URL]) -> Void)? = nil,
+         onExpand: (([URL], Bool) -> Void)? = nil,
          onAsk: (([URL]) -> Void)? = nil,
          onEdit: (([URL]) -> Void)? = nil) {
         self.urls = urls
@@ -363,6 +385,7 @@ final class ActionBridge: NSObject {
         self.onShare = onShare
         self.onRemove = onRemove
         self.onRemoveFromDen = onRemoveFromDen
+        self.onExpand = onExpand
         self.onAsk = onAsk
         self.onEdit = onEdit
     }
@@ -475,6 +498,16 @@ final class ActionBridge: NSObject {
 
     @objc func removeFromDen() {
         onRemoveFromDen?(urls)
+    }
+
+    @objc func expandIntoDen() { expand(recursive: false) }
+
+    @objc func expandIntoDenRecursively() { expand(recursive: true) }
+
+    private func expand(recursive: Bool) {
+        let dirs = urls.filter { FileActions.isDirectory($0) }
+        guard !dirs.isEmpty else { return }
+        onExpand?(dirs, recursive)
     }
 
     @objc func trash() {
