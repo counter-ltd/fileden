@@ -27,7 +27,9 @@ RELEASE_FLAGS  := -Xswiftc -Osize -Xswiftc -wmo -Xlinker -dead_strip
 
 BIN_PATH       = $(shell $(SWIFT) build -c $(CONFIG) --show-bin-path)
 
-.PHONY: all build bundle run debug stop clean format help icon release
+APPBIN ?= ../app-arently/.build/release/app-arently
+
+.PHONY: all build bundle run debug stop clean format help icon release screenshot
 
 all: build
 
@@ -104,6 +106,11 @@ stop:
 reset:
 	@rm -rf "$$HOME/Library/Application Support/counter-ltd/fileden"
 	@echo "→ wiped ~/Library/Application Support/counter-ltd/fileden"
+
+screenshot: bundle
+	@mkdir -p assets
+	$(APPBIN) profile --app "$(APP_BUNDLE)" --out assets/benchmark.png
+	@echo "Screenshot: assets/benchmark.png"
 
 clean:
 	$(SWIFT) package clean
