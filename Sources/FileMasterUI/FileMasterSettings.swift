@@ -44,6 +44,20 @@ final class FileMasterSettings: ObservableObject {
         }
     }
 
+    /// When false, a file-drag won't spawn a new den if one is already open —
+    /// the user drops into the existing den instead. Only consulted by
+    /// file-drag activation.
+    @Published var fileDragNewDenWhenOpen: Bool {
+        didSet { UserDefaults.standard.set(fileDragNewDenWhenOpen, forKey: "fileDragNewDenWhenOpen") }
+    }
+
+    /// When true, shaking the mouse mid file-drag forces a fresh den instance
+    /// even if one is already open — an escape hatch that pairs with
+    /// `fileDragNewDenWhenOpen` being off. Only consulted by file-drag activation.
+    @Published var fileDragShakeForNewInstance: Bool {
+        didSet { UserDefaults.standard.set(fileDragShakeForNewInstance, forKey: "fileDragShakeForNewInstance") }
+    }
+
     @Published var notchActivationEnabled: Bool {
         didSet { UserDefaults.standard.set(notchActivationEnabled, forKey: "notchActivationEnabled") }
     }
@@ -92,6 +106,9 @@ final class FileMasterSettings: ObservableObject {
         hotkeyActivationEnabled = UserDefaults.standard.bool(forKey: "hotkeyActivationEnabled")
         shakeActivationEnabled = UserDefaults.standard.bool(forKey: "shakeActivationEnabled")
         fileDragActivationEnabled = UserDefaults.standard.bool(forKey: "fileDragActivationEnabled")
+        // Defaults on: preserve the always-open-a-new-den behaviour.
+        fileDragNewDenWhenOpen = UserDefaults.standard.object(forKey: "fileDragNewDenWhenOpen") as? Bool ?? true
+        fileDragShakeForNewInstance = UserDefaults.standard.bool(forKey: "fileDragShakeForNewInstance")
         notchActivationEnabled = UserDefaults.standard.bool(forKey: "notchActivationEnabled")
         // Both default on: the feature is available out of the box.
         aiEnabled = UserDefaults.standard.object(forKey: "aiEnabled") as? Bool ?? true

@@ -4,6 +4,35 @@ All notable changes to FileMaster are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] — 2026-05-29
+
+### Fixed
+- File Drag and Notch Drop activation no longer fire on a plain mouse-drag.
+  Both trusted the drag pasteboard's retained contents, so once any file had
+  been dragged, every later mouse-drag looked like a file drag. They now only
+  activate when the drag pasteboard is rewritten during the current gesture
+  (tracked via its `changeCount`, baselined on mouse-down).
+
+### Added
+- **File Drag → "New Den each drag"** — when off, a file-drag drops into the
+  already-open den instead of spawning another. On by default.
+- **File Drag → "Shake for new instance"** — shake mid-drag to force a fresh
+  den even when one is already open. Off by default.
+
+## [1.1.0] — 2026-05-29
+
+### Added
+- **"File Drag" activation mode** — start dragging a file anywhere and a den
+  opens at the cursor to catch it, closing again on release if nothing was
+  dropped in. Selectable from *Settings → New Den Activation*.
+
+### Changed
+- Activation modes can now be combined. Notch and Hotkey mix freely with
+  either gesture, but Mouse Shake and File Drag both react to a mouse drag,
+  so enabling one switches the other off.
+- Accessibility permission copy now notes that File Drag activation also
+  needs the global grant.
+
 ## [1.0.0] — 2026-05-27
 
 First production release.

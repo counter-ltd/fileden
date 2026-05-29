@@ -451,6 +451,23 @@ struct SettingsTabContent: View {
                     .padding(.top, 2)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
+
+            if settings.fileDragActivationEnabled {
+                settingRow(
+                    title: "New Den each drag",
+                    subtitle: "Open a new Den even when one is already open.",
+                    isOn: $settings.fileDragNewDenWhenOpen
+                )
+                .padding(.top, 2)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+
+                settingRow(
+                    title: "Shake for new instance",
+                    subtitle: "Shake mid-drag to force a new Den when one is already open.",
+                    isOn: $settings.fileDragShakeForNewInstance
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
     }
 

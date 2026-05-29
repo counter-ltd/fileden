@@ -9,9 +9,16 @@ final class NotchDropController {
     private var panel: NSPanel?
     private var cancellables = Set<AnyCancellable>()
     private var screenObserver: NSObjectProtocol?
+    private var downMonitor: Any?
     private var dragMonitor: Any?
     private var releaseMonitor: Any?
     private var dragActive = false
+    // Drag-pasteboard changeCount captured at mouse-down. The pasteboard keeps
+    // its contents between drag sessions, so a stale fileURL would otherwise
+    // make every plain mouse-drag look like a file drag. Only trust the
+    // pasteboard once it's rewritten (changeCount moves past this baseline)
+    // during the current down→up sequence.
+    private var baselineChangeCount = 0
 
     private init() {}
 
@@ -66,6 +73,11 @@ final class NotchDropController {
     }
 
     private func installDragMonitors() {
+        if downMonitor == nil {
+            downMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
+                Task { @MainActor in self?.baselineChangeCount = NSPasteboard(name: .drag).changeCount }
+            }
+        }
         if dragMonitor == nil {
             dragMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDragged) { [weak self] _ in
                 Task { @MainActor in self?.checkForFileDrag() }
@@ -79,6 +91,7 @@ final class NotchDropController {
     }
 
     private func removeDragMonitors() {
+        if let m = downMonitor    { NSEvent.removeMonitor(m); downMonitor    = nil }
         if let m = dragMonitor    { NSEvent.removeMonitor(m); dragMonitor    = nil }
         if let m = releaseMonitor { NSEvent.removeMonitor(m); releaseMonitor = nil }
         endDrag()
@@ -87,6 +100,10 @@ final class NotchDropController {
     private func checkForFileDrag() {
         guard !dragActive, let panel else { return }
         let pb = NSPasteboard(name: .drag)
+        // A real file drag rewrites the drag pasteboard this gesture, bumping
+        // its changeCount past the mouse-down baseline. Without this guard a
+        // leftover fileURL from an earlier drag fires on any plain mouse-drag.
+        guard pb.changeCount != baselineChangeCount else { return }
         guard pb.types?.contains(.fileURL) == true else { return }
         dragActive = true
         panel.ignoresMouseEvents = false

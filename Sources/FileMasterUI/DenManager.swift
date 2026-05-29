@@ -170,4 +170,7 @@ public class DenManager {
     }
 
     public var hasDens: Bool { !dens.isEmpty }
+
+    /// True when at least one den window is currently on screen.
+    public var hasVisibleDen: Bool { dens.contains { $0.window?.isVisible == true } }
 }

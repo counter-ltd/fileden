@@ -40,6 +40,9 @@ Icon
 *.dmg
 *.zip
 
+# Wrangler (R2 uploads) — local cache holds the Cloudflare account id/name
+.wrangler/
+
 # Local-only tests (Package.swift includes the test target only when present)
 Tests/
 
