@@ -4,6 +4,16 @@ All notable changes to FileMaster are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Image → Upscale…** — enlarge images on-device with Lanczos resampling
+  (`CILanczosScaleTransform`), no AI model or network. Fully configurable like
+  Resize/Compress: target by **factor** (2×, 4×…), exact **width**, or
+  **longest** side; choose the output format (or keep the source) and a quality
+  for lossy targets, with the new pixel size shown live. Output is capped at
+  16384 px per side (the texture ceiling), aspect preserved.
+
 ## [1.1.1] — 2026-05-29
 
 ### Fixed

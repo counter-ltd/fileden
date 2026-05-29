@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import CoreImage
 import CoreVideo
 import ImageIO
 
@@ -323,6 +324,125 @@ enum ImageResize {
         ctx.interpolationQuality = .high
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
         return ctx.makeImage()
+    }
+}
+
+/// Enlarge images on-device with Lanczos resampling, preserving aspect ratio.
+///
+/// This is the inverse of `ImageResize`'s downscale case, but built for *growing*
+/// pixels: it uses Core Image's `CILanczosScaleTransform` rather than a Core
+/// Graphics redraw, because Lanczos keeps far more edge detail when scaling up
+/// (a bicubic `CGContext` blurs noticeably past ~2×). No model, no network —
+/// classic resampling, so it can't invent detail, only enlarge cleanly.
+///
+/// The panel offers three aspect-preserving targets: a **factor** (2×, 4×…), an
+/// exact **width**, or fit the **longest** side to a box. Output keeps the
+/// source's format by default (PNG fallback) or a chosen one, with a quality
+/// dial for lossy targets. File-in / file-out, like the rest.
+enum ImageUpscale {
+
+    /// How the (larger) target dimensions are derived; the off-axis follows to
+    /// keep aspect. `width`/`longest` below the source still work — they just
+    /// downscale — but the panel constrains them to enlargement.
+    enum Mode: Hashable {
+        case factor(Double)   // multiply both dimensions (1 = original)
+        case width(Int)       // exact pixel width
+        case longest(Int)     // longest side fits this many pixels
+    }
+
+    /// Everything the panel can tweak. `format == nil` keeps the source format.
+    struct Options: Equatable {
+        var mode: Mode = .factor(2.0)
+        /// nil → keep the source format (PNG fallback); else force this format.
+        var format: ImageConvert.Format? = nil
+        /// Lossy quality 0…1, applied only when the resolved format is lossy.
+        var quality: Double = 0.92
+    }
+
+    /// Largest output we'll attempt per side — the Core Image / Metal texture
+    /// ceiling. Targets beyond this are clamped down, aspect preserved.
+    static let maxSide = 16_384
+
+    /// Target pixel size for `original` under `mode`, aspect preserved and capped
+    /// at ``maxSide``. Drives both the render and the panel's live readout.
+    static func target(for original: CGSize, mode: Mode) -> CGSize {
+        let ow = max(original.width, 1), oh = max(original.height, 1)
+        let factor: CGFloat
+        switch mode {
+        case .factor(let f):  factor = CGFloat(max(f, 0.01))
+        case .width(let w):   factor = CGFloat(max(w, 1)) / ow
+        case .longest(let l): factor = CGFloat(max(l, 1)) / max(ow, oh)
+        }
+        var w = (ow * factor).rounded(), h = (oh * factor).rounded()
+        let over = max(w, h) / CGFloat(maxSide)
+        if over > 1 { w = (w / over).rounded(); h = (h / over).rounded() }
+        return CGSize(width: max(w, 1), height: max(h, 1))
+    }
+
+    /// The format the output will use: an encodable override, else the source
+    /// format if this OS can write it, else PNG. Public so the panel can decide
+    /// whether to show the quality dial.
+    static func outputFormat(for url: URL, override: ImageConvert.Format?) -> ImageConvert.Format {
+        if let override, ImageConvert.canEncode(override) { return override }
+        for f in ImageConvert.Format.allCases where f.matches(url) && ImageConvert.canEncode(f) {
+            return f
+        }
+        return .png
+    }
+
+    static func process(_ urls: [URL], options: Options) -> [URL] {
+        let dir = Staging.dir("IMG")
+        var out: [URL] = []
+        for url in urls {
+            guard let (data, size, format) = render(url, options: options) else { continue }
+            let name = "\(url.deletingPathExtension().lastPathComponent) "
+                + "\(Int(size.width))×\(Int(size.height)).\(format.ext)"
+            let dest = Staging.uniqueURL(in: dir, name: name)
+            if (try? data.write(to: dest)) != nil { out.append(dest) }
+        }
+        return out
+    }
+
+    // MARK: - Core
+
+    /// Reused across the batch; `CIContext` is expensive to build and safe to
+    /// share for rendering on a background queue.
+    private static let ciContext = CIContext()
+
+    private static func render(_ url: URL, options: Options) -> (data: Data, size: CGSize, format: ImageConvert.Format)? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              CGImageSourceGetCount(source) > 0,
+              let original = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        let orientation = (CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])?[kCGImagePropertyOrientation]
+
+        let size = target(for: CGSize(width: original.width, height: original.height), mode: options.mode)
+        guard let scaled = upscale(original, to: size) else { return nil }
+        let format = outputFormat(for: url, override: options.format)
+
+        let data = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(data, format.typeID as CFString, 1, nil) else { return nil }
+        var props: [CFString: Any] = [:]
+        if format.isLossy { props[kCGImageDestinationLossyCompressionQuality] = options.quality }
+        if let orientation { props[kCGImagePropertyOrientation] = orientation }
+        CGImageDestinationAddImage(dest, scaled, props as CFDictionary)
+        return CGImageDestinationFinalize(dest) ? (data as Data, size, format) : nil
+    }
+
+    /// Lanczos-scale `image` to exactly `size`. The filter takes a uniform scale
+    /// plus an aspect ratio, so we derive both from the (already aspect-correct)
+    /// target and crop the output to the integer pixel rect.
+    private static func upscale(_ image: CGImage, to size: CGSize) -> CGImage? {
+        let input = CIImage(cgImage: image)
+        let scale = size.height / CGFloat(max(image.height, 1))
+        let aspect = (size.width / CGFloat(max(image.width, 1))) / scale
+        guard let filter = CIFilter(name: "CILanczosScaleTransform") else { return nil }
+        filter.setValue(input, forKey: kCIInputImageKey)
+        filter.setValue(scale, forKey: kCIInputScaleKey)
+        filter.setValue(aspect, forKey: kCIInputAspectRatioKey)
+        guard let output = filter.outputImage else { return nil }
+        let rect = CGRect(x: 0, y: 0, width: size.width, height: size.height)
+        let colorSpace = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)
+        return ciContext.createCGImage(output, from: rect, format: .RGBA8, colorSpace: colorSpace)
     }
 }
 

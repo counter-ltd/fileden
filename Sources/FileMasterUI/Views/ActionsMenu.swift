@@ -267,6 +267,8 @@ enum FileActions {
         }
         sub.addItem(item("Resize…", "arrow.up.left.and.arrow.down.right",
                          #selector(ActionBridge.resizeImage), bridge))
+        sub.addItem(item("Upscale…", "plus.magnifyingglass",
+                         #selector(ActionBridge.upscaleImage), bridge))
         sub.addItem(item("Compress Image…", "arrow.down.right.and.arrow.up.left",
                          #selector(ActionBridge.compressImage), bridge))
 
@@ -597,6 +599,24 @@ final class ActionBridge: NSObject {
                         ActionPopover.shared.dismiss()
                         ActionBridge.stage("Resizing", inputs: inputs) { url, _ in
                             ImageResize.process([url], mode: mode)
+                        }
+                    },
+                    onCancel: { ActionPopover.shared.dismiss() })
+            }
+        }
+    }
+
+    @objc func upscaleImage() {
+        guard let host else { return }
+        let inputs = urls
+        MainActor.assumeIsolated {
+            ActionPopover.shared.present(from: host) {
+                ImageUpscalePanel(
+                    urls: inputs,
+                    onUpscale: { opts in
+                        ActionPopover.shared.dismiss()
+                        ActionBridge.stage("Upscaling", inputs: inputs) { url, _ in
+                            ImageUpscale.process([url], options: opts)
                         }
                     },
                     onCancel: { ActionPopover.shared.dismiss() })
