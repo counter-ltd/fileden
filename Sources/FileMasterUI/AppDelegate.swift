@@ -96,6 +96,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         _ = DenManager.shared
         GlobalShortcutManager.shared.start()
         ShakeDetector.shared.start()
+        FileDragDetector.shared.start()
         NotchDropController.shared.start()
         suppressAutoOpenedWindows()
     }

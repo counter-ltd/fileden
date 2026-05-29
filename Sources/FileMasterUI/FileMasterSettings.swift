@@ -27,8 +27,21 @@ final class FileMasterSettings: ObservableObject {
         didSet { UserDefaults.standard.set(hotkeyActivationEnabled, forKey: "hotkeyActivationEnabled") }
     }
 
+    /// Shake and file-drag both react to a mouse drag, so they can't run at
+    /// once — enabling one switches the other off. Notch and hotkey combine
+    /// freely with either.
     @Published var shakeActivationEnabled: Bool {
-        didSet { UserDefaults.standard.set(shakeActivationEnabled, forKey: "shakeActivationEnabled") }
+        didSet {
+            UserDefaults.standard.set(shakeActivationEnabled, forKey: "shakeActivationEnabled")
+            if shakeActivationEnabled && fileDragActivationEnabled { fileDragActivationEnabled = false }
+        }
+    }
+
+    @Published var fileDragActivationEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(fileDragActivationEnabled, forKey: "fileDragActivationEnabled")
+            if fileDragActivationEnabled && shakeActivationEnabled { shakeActivationEnabled = false }
+        }
     }
 
     @Published var notchActivationEnabled: Bool {
@@ -78,6 +91,7 @@ final class FileMasterSettings: ObservableObject {
         shortcutModifiers = UserDefaults.standard.integer(forKey: "shortcutModifiers")
         hotkeyActivationEnabled = UserDefaults.standard.bool(forKey: "hotkeyActivationEnabled")
         shakeActivationEnabled = UserDefaults.standard.bool(forKey: "shakeActivationEnabled")
+        fileDragActivationEnabled = UserDefaults.standard.bool(forKey: "fileDragActivationEnabled")
         notchActivationEnabled = UserDefaults.standard.bool(forKey: "notchActivationEnabled")
         // Both default on: the feature is available out of the box.
         aiEnabled = UserDefaults.standard.object(forKey: "aiEnabled") as? Bool ?? true

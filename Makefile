@@ -67,7 +67,7 @@ BIN_PATH       = $(shell $(SWIFT) build -c $(CONFIG) --show-bin-path)
 APPBIN ?= ../app-arently/.build/release/app-arently
 
 .PHONY: all build bundle run debug stop clean format help icon release \
-        bundle-app version bump test dmg build-mas dist dist-manifest screenshot reset showcase
+        bundle-app version bump test dmg build-mas dist dist-manifest screenshot reset showcase showcase-wide
 
 all: build
 
@@ -173,6 +173,12 @@ showcase:
 	@$(MAKE) --no-print-directory SHOWCASE=1 bundle
 	@echo "→ recording reel (foreground; the MP4 opens on your Desktop when done)"
 	@"$(APP_BUNDLE)/Contents/MacOS/$(EXEC_NAME)" --showcase
+
+# 16:9, ~61 s landscape feature tour (Reddit/YouTube). Same bundle, different flag.
+showcase-wide:
+	@$(MAKE) --no-print-directory SHOWCASE=1 bundle
+	@echo "→ recording wide showcase (foreground; the MP4 opens on your Desktop when done)"
+	@"$(APP_BUNDLE)/Contents/MacOS/$(EXEC_NAME)" --showcase-wide
 
 stop:
 	@pkill -x $(EXEC_NAME) 2>/dev/null || true

@@ -400,7 +400,7 @@ struct SettingsTabContent: View {
             permissionSection(
                 title: "Accessibility",
                 systemImage: "lock.shield",
-                description: "Hotkey and shake activation require Accessibility access to work globally.",
+                description: "Hotkey, shake, and file-drag activation require Accessibility access to work globally.",
                 statusIcon: accessibilityGranted ? "checkmark.seal.fill" : "xmark.seal.fill",
                 statusText: accessibilityGranted ? "Granted" : "Not granted",
                 statusColor: accessibilityGranted ? .green : .red,
@@ -462,6 +462,9 @@ struct SettingsTabContent: View {
             Toggle(isOn: $settings.shakeActivationEnabled) {
                 Label("Mouse Shake", systemImage: "arrow.left.and.right")
             }
+            Toggle(isOn: $settings.fileDragActivationEnabled) {
+                Label("File Drag", systemImage: "doc.badge.arrow.up")
+            }
             Toggle(isOn: $settings.notchActivationEnabled) {
                 Label("Notch Drop", systemImage: "rectangle.topthird.inset.filled")
             }
@@ -482,9 +485,10 @@ struct SettingsTabContent: View {
 
     private var activationSummary: String {
         let parts = [
-            settings.hotkeyActivationEnabled ? "Hotkey" : nil,
-            settings.shakeActivationEnabled  ? "Shake"  : nil,
-            settings.notchActivationEnabled  ? "Notch"  : nil,
+            settings.hotkeyActivationEnabled  ? "Hotkey" : nil,
+            settings.shakeActivationEnabled   ? "Shake"  : nil,
+            settings.fileDragActivationEnabled ? "Drag"  : nil,
+            settings.notchActivationEnabled   ? "Notch"  : nil,
         ].compactMap { $0 }
         return parts.isEmpty ? "None" : parts.joined(separator: ", ")
     }

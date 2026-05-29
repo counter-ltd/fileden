@@ -10,17 +10,25 @@
 
 import AppKit
 import CoreGraphics
+import SwiftUI
 
 @MainActor
 public enum ShowcaseRunner {
-    /// True when this process was launched to record the reel. AppDelegate
+    /// True when this process was launched to record a reel. AppDelegate
     /// checks this before standing up the menu bar / den services.
     public static var isActive: Bool {
         CommandLine.arguments.contains("--showcase")
+            || CommandLine.arguments.contains("--showcase-wide")
+    }
+
+    /// `--showcase-wide` records the 16:9 long-form feature tour instead of the
+    /// 9:16 reel.
+    private static var isWide: Bool {
+        CommandLine.arguments.contains("--showcase-wide")
     }
 
     // Held for the process lifetime so neither is deallocated mid-recording.
-    private static var director: ReelDirector?
+    private static var control: AnyObject?
     private static var recorder: ReelRecorder?
 
     /// Kick off the automated recording. Call once from
@@ -48,11 +56,29 @@ public enum ShowcaseRunner {
             return
         }
 
-        print("● Recording FileMaster reel (9:16, ~16 s)… the MP4 will open on your Desktop when done.")
-
-        let d = ReelDirector()
-        let rec = ReelRecorder(director: d)
-        director = d
+        let rec: ReelRecorder
+        if isWide {
+            print("● Recording FileMaster showcase (16:9, ~61 s)… the MP4 will open on your Desktop when done.")
+            let d = WideDirector()
+            control = d
+            rec = ReelRecorder(
+                control: d,
+                designSize: CGSize(width: 640, height: 360),
+                outputSize: CGSize(width: 1920, height: 1080),
+                fps: 30,
+                rootView: { [d] in AnyView(WideSceneViewBound(director: d)) }
+            )
+        } else {
+            print("● Recording FileMaster reel (9:16, ~16 s)… the MP4 will open on your Desktop when done.")
+            let d = ReelDirector()
+            control = d
+            rec = ReelRecorder(
+                control: d,
+                designSize: CGSize(width: 360, height: 640),
+                outputSize: CGSize(width: 1080, height: 1920),
+                rootView: { [d] in AnyView(ReelSceneViewBound(director: d)) }
+            )
+        }
         recorder = rec
         rec.onFinished = { url in
             if let url {

@@ -16,8 +16,20 @@ import AVFoundation
 import ScreenCaptureKit
 import SwiftUI
 
+/// Minimal surface the recorder needs from a timeline driver, so it can record
+/// either the portrait reel (`ReelDirector`) or the wide showcase (`WideDirector`).
+protocol ReelControl: AnyObject {
+    var cycleLength: Double { get }
+    func start()
+    func stop()
+}
+
 final class ReelRecorder: @unchecked Sendable {
-    private let director: ReelDirector
+    private let control: any ReelControl
+    private let designSize: CGSize               // SwiftUI layout size (points)
+    private let outputSize: CGSize               // captured pixel size
+    private let fps: Int                         // capture / encode frame rate
+    private let makeRootView: @MainActor () -> AnyView
     private let lock = NSLock()                  // guards writer / inputs
     private var captureWindow: NSWindow?
     private var stream: SCStream?
@@ -33,8 +45,21 @@ final class ReelRecorder: @unchecked Sendable {
     /// Finder. The automated runner uses it to quit; the manual UI ignores it.
     var onFinished: (@MainActor (URL?) -> Void)?
 
-    init(director: ReelDirector) {
-        self.director = director
+    /// - Parameters:
+    ///   - control:   the timeline driver to start once capture is stable.
+    ///   - designSize: the SwiftUI scene's natural layout size (e.g. 360×640).
+    ///   - outputSize: the recorded video size (e.g. 1080×1920 or 1920×1080).
+    ///   - rootView:  builds the scene view to host (captures its own director).
+    init(control: any ReelControl,
+         designSize: CGSize,
+         outputSize: CGSize,
+         fps: Int = 60,
+         rootView: @escaping @MainActor () -> AnyView) {
+        self.control = control
+        self.designSize = designSize
+        self.outputSize = outputSize
+        self.fps = fps
+        self.makeRootView = rootView
     }
 
     func start() async {
@@ -42,7 +67,7 @@ final class ReelRecorder: @unchecked Sendable {
         //    and its windowNumber inside MainActor.run (windowNumber is
         //    main-actor isolated).
         let (win, windowNumber) = await MainActor.run { () -> (NSWindow, Int) in
-            let w = Self.makeCaptureWindow(director: director)
+            let w = self.makeCaptureWindow()
             return (w, w.windowNumber)
         }
         captureWindow = win
@@ -72,12 +97,12 @@ final class ReelRecorder: @unchecked Sendable {
         }
         let videoSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: 1080, AVVideoHeightKey: 1920,
+            AVVideoWidthKey: Int(outputSize.width), AVVideoHeightKey: Int(outputSize.height),
             AVVideoCompressionPropertiesKey: [
                 AVVideoAverageBitRateKey: 15_000_000,
-                AVVideoMaxKeyFrameIntervalKey: 60,
+                AVVideoMaxKeyFrameIntervalKey: fps,
                 AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
-                AVVideoExpectedSourceFrameRateKey: 60,
+                AVVideoExpectedSourceFrameRateKey: fps,
             ],
         ]
         let audioSettings: [String: Any] = [
@@ -98,8 +123,8 @@ final class ReelRecorder: @unchecked Sendable {
         //    directly, no Swift Concurrency hop.
         let filter = SCContentFilter(desktopIndependentWindow: scWin)
         let config = SCStreamConfiguration()
-        config.width = 1080; config.height = 1920
-        config.minimumFrameInterval = CMTime(value: 1, timescale: 60)
+        config.width = Int(outputSize.width); config.height = Int(outputSize.height)
+        config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(fps))
         config.pixelFormat = kCVPixelFormatType_32BGRA
         config.scalesToFit = true
         config.showsCursor = false
@@ -126,11 +151,11 @@ final class ReelRecorder: @unchecked Sendable {
         // file-drop animation — so the recording opens with files already
         // stacked. Holding here guarantees the whole timeline lands on tape.
         try? await Task.sleep(for: .seconds(1.3))
-        await MainActor.run { self.director.start() }
+        await MainActor.run { self.control.start() }
 
         // 6. Auto-stop after one full cycle + 1.0 s buffer so the bumper's
         //    final frames and audio fade are guaranteed to land in the MP4.
-        let duration = director.cycleLength + 1.0
+        let duration = control.cycleLength + 1.0
         autoStopTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(duration))
             await self?.stop()
@@ -215,14 +240,15 @@ final class ReelRecorder: @unchecked Sendable {
         }
     }
 
-    // The hidden 1080×1920 NSWindow that hosts the bound scene for capture.
-    // Parked at x=50_000 — fully off any display so it never flashes, but
+    // The hidden capture NSWindow that hosts the bound scene. Parked at
+    // x=50_000 — fully off any display so it never flashes, but
     // orderFrontRegardless() keeps CoreAnimation compositing its layer tree so
-    // SCStream can still capture it.
+    // SCStream can still capture it. The scene lays out at `designSize`, then a
+    // uniform scale blows it up to the recorded `outputSize`.
     @MainActor
-    private static func makeCaptureWindow(director: ReelDirector) -> NSWindow {
+    private func makeCaptureWindow() -> NSWindow {
         let win = NSWindow(
-            contentRect: NSRect(x: 50_000, y: 0, width: 1080, height: 1920),
+            contentRect: NSRect(x: 50_000, y: 0, width: outputSize.width, height: outputSize.height),
             styleMask: [.borderless],
             backing: .buffered, defer: false
         )
@@ -231,11 +257,12 @@ final class ReelRecorder: @unchecked Sendable {
         win.isReleasedWhenClosed = false
         win.backgroundColor = .black
 
+        let scale = outputSize.width / designSize.width
         let host = NSHostingView(
-            rootView: ReelSceneViewBound(director: director)
-                .frame(width: 360, height: 640)
-                .scaleEffect(3.0, anchor: .topLeading)
-                .frame(width: 1080, height: 1920, alignment: .topLeading)
+            rootView: makeRootView()
+                .frame(width: designSize.width, height: designSize.height)
+                .scaleEffect(scale, anchor: .topLeading)
+                .frame(width: outputSize.width, height: outputSize.height, alignment: .topLeading)
         )
         win.contentView = host
         win.orderFrontRegardless()
