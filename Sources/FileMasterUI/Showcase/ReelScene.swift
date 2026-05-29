@@ -48,7 +48,10 @@ enum ReelDemo {
     // Each placeholder is created at a realistic logical size via a sparse
     // truncate — the den shows "1.8 MB", "47.5 MB", etc. instead of "Zero KB"
     // without ever writing those bytes to disk. Type icons come from the
-    // extension via NSWorkspace, so empty content is fine.
+    // extension via NSWorkspace, so empty content is fine — EXCEPT for image /
+    // video types, whose thumbnailer tries to *decode* the (empty) file and
+    // renders a garbled smear. Those get real, tiny renderable content (see
+    // `makeImage`); everything else stays sparse and shows a crisp type icon.
     private static func make(_ specs: [(String, Int)]) -> [URL] {
         specs.map { name, bytes in
             let url = dir.appendingPathComponent(name)
@@ -63,11 +66,61 @@ enum ReelDemo {
         }
     }
 
-    static let denFiles = make([
-        ("Q3 Report.pdf", 1_840_000), ("Brand Moodboard.png", 3_200_000),
-        ("Contract.docx", 246_000), ("Release Notes.md", 8_200),
-        ("assets.zip", 12_400_000), ("walkthrough.mov", 47_500_000),
-    ])
+    /// A real, renderable PNG so the den's image thumbnail is a clean little
+    /// branded card — not the corrupt smear an empty `.png` decodes to.
+    private static func makeImage(_ name: String, _ px: CGFloat) -> URL {
+        let url = dir.appendingPathComponent(name)
+        let size = NSSize(width: px, height: px * 0.72)
+        let img = NSImage(size: size)
+        img.lockFocus()
+        NSGradient(colors: [NSColor(red: 0.27, green: 0.62, blue: 1.0, alpha: 1),
+                            NSColor(red: 0.20, green: 0.85, blue: 0.86, alpha: 1)])?
+            .draw(in: NSRect(origin: .zero, size: size), angle: 55)
+        NSColor.white.withAlphaComponent(0.85).setFill()
+        NSBezierPath(ovalIn: NSRect(x: size.width * 0.16, y: size.height * 0.26,
+                                    width: size.height * 0.34, height: size.height * 0.34)).fill()
+        NSColor.white.withAlphaComponent(0.6).setFill()
+        NSBezierPath(roundedRect: NSRect(x: size.width * 0.10, y: size.height * 0.10,
+                                         width: size.width * 0.80, height: size.height * 0.16),
+                     xRadius: 4, yRadius: 4).fill()
+        img.unlockFocus()
+        if let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+           let png = rep.representation(using: .png, properties: [:]) {
+            try? png.write(to: url)
+        }
+        return url
+    }
+
+    /// Real text content so QuickLook renders a legible document page in the
+    /// expanded grid/list — an empty `.md` thumbnails as a stark blank card.
+    private static func makeText(_ name: String, _ body: String) -> URL {
+        let url = dir.appendingPathComponent(name)
+        try? body.data(using: .utf8)?.write(to: url)
+        return url
+    }
+
+    // Order matters: the compact den's stack shows the first three, so they lead
+    // with crisp, instantly-readable type icons (PDF · DOCX · Markdown). The
+    // image and the heavier files round out the expanded grid.
+    static let denFiles: [URL] = {
+        let icons = make([
+            ("Q3 Report.pdf", 1_840_000),
+            ("Contract.docx", 246_000),
+        ])
+        let notes = makeText("Release Notes.md", """
+        # FileMaster 1.0
+
+        - Floating den: drag anything in, stash it instantly.
+        - PDF tools, format conversions, a built-in image editor.
+        - Ask your documents — fully on-device, nothing uploaded.
+        """)
+        let image = makeImage("Brand Moodboard.png", 320)
+        let rest = make([
+            ("assets.zip", 12_400_000),
+            ("walkthrough.mov", 47_500_000),
+        ])
+        return icons + [notes, image] + rest
+    }()
 
     // A real Markdown file behind the cited answer, so the citation chip
     // resolves like any grounded source.
@@ -270,9 +323,8 @@ final class ReelDirector: @unchecked Sendable {
     // 0 compact den · 1 expanded grid · 2 list · 3 Ask
     var stage = 0
     var askPhase = 0             // Ask reveal: 0 none · 1 question · 2 thinking · 3 answer
-    var denReveal = 0.0          // den pops in (0→1)
-    var denCount = 0             // how many files the REAL den currently holds (grows as they land)
-    var dropActive = false       // files-flying-in overlay is in the tree
+    var denReveal = 0.0          // the den pops in (0→1)
+    var denCount = 0             // cards landed in the compact den's stack (0→3)
     var denScale = 1.0           // bounces when a file lands / on a cut
     var cutFlash = 0.0           // accent flash on each whip cut
     var brandScale = 0.8         // brand lockup bounces in
@@ -326,7 +378,7 @@ final class ReelDirector: @unchecked Sendable {
 
     private func reset() {
         stage = 0; askPhase = 0
-        denReveal = 0.0; denCount = 0; dropActive = false
+        denReveal = 0.0; denCount = 0
         denScale = 1.0
         cutFlash = 0; brandScale = 0.8
         montageOpacity = 1
@@ -402,26 +454,21 @@ final class ReelDirector: @unchecked Sendable {
             withAnimation(.spring(response: 0.45, dampingFraction: 0.6)) { self.denReveal = 1.0 }
             self.haloPulse()
         }
-        at(0.9) { self.dropActive = true }  // launch the flying files
 
-        // Each file flies into the den and the REAL den's count grows with it —
-        // so the stack you see building is the genuine StackedFilesView, not a
-        // mock. Three deliveries take it to all 6 files.
-        for (i, spec) in [(1.45, 2), (1.95, 4), (2.45, 6)].enumerated() {
-            at(spec.0) {
+        // Files drop in on the beat and the stack BUILDS card by card, exactly
+        // like the real den: the dashed drop-target gives way to one card, then a
+        // fanned stack of three, then the "6 Files" subtitle. `denCount` (0→3) is
+        // sprung so each card slides down into its slot — no remount, no flicker.
+        for i in 0..<3 {
+            at(1.0 + Double(i) * 0.5) {
                 self.audio.play("thunk", gain: i == 2 ? 1.0 : 0.85)
-                withAnimation(.spring(response: 0.34, dampingFraction: 0.7)) {
-                    self.denCount = spec.1
+                withAnimation(.spring(response: 0.44, dampingFraction: 0.68)) {
+                    self.denCount = i + 1
                 }
-                self.denPunch(1.12)
+                self.denPunch(1.08)
             }
         }
-
-        at(2.9) {
-            self.audio.play("pop")
-            self.dropActive = false     // flyers cleared; the real filled den remains
-            self.flash()
-        }
+        at(2.05) { self.audio.play("pop"); self.flash() }
 
         // ── Beat-synced feature whips. ──
         at(4.0) { self.cut(to: 1) }        // expanded grid
@@ -432,8 +479,8 @@ final class ReelDirector: @unchecked Sendable {
             self.cut(to: 3)
             self.askPhase = 1              // the question slides in
         }
-        at(7.7) { self.askPhase = 2; self.audio.play("pop") }                       // "Thinking…"
-        at(8.5) { self.askPhase = 3; self.audio.play("ding"); self.denPunch(1.05) } // answer lands
+        at(7.7) { self.askPhase = 2; self.audio.play("pop") }   // "Thinking…"
+        at(8.5) { self.askPhase = 3; self.audio.play("ding") }  // answer lands (no card punch)
 
         // ── Riser into the closing bumper. ──
         at(10.0) { self.audio.play("riser") }
@@ -503,19 +550,14 @@ struct ReelSceneContent: View {
                 // Card zone — real UI whips through here, with a punch on cuts.
                 ZStack {
                     if director.stage == 0 {
-                        // The REAL den, its item count growing as files land —
-                        // empty dashed drop-target → stack → "6 Files". Every
-                        // frame is the genuine ShelfView, so it matches the rest.
+                        // The compact den, building its stack card by card as
+                        // files drop in — same chrome, same StackedFilesView fan
+                        // geometry, same thumbnail cards as the shipping den.
                         StageCard {
-                            ShelfView(initialURLs: Array(ReelDemo.denFiles.prefix(director.denCount)),
-                                      initiallyExpanded: false,
-                                      initiallyTargeted: director.denCount == 0)
+                            DropDen(director: director)
                         }
-                        .id(director.denCount)
-                        .transition(.opacity)
                         .scaleEffect(0.6 + 0.4 * director.denReveal)
                         .opacity(director.denReveal)
-                        .animation(.easeInOut(duration: 0.25), value: director.denCount)
                     }
                     if director.stage == 1 {
                         StageCard { ShelfView(initialURLs: ReelDemo.denFiles,
@@ -554,14 +596,6 @@ struct ReelSceneContent: View {
             }
             .frame(width: 360, height: 640)
             .opacity(director.montageOpacity)
-
-            // Intro: files fly in and drop into the den (the den's real count
-            // grows to meet each one).
-            if director.dropActive {
-                DropOverlay()
-                    .opacity(director.montageOpacity)
-                    .allowsHitTesting(false)
-            }
 
             // Accent flash on each whip cut.
             Rectangle()
@@ -617,77 +651,148 @@ struct ReelSceneContent: View {
     }
 }
 
-// MARK: - Flying-files drop intro
+// MARK: - Compact den with a card-by-card drop build
 //
-// Each file flies in from an edge and *settles onto a growing stack* using the
-// real den's StackedFilesView geometry (same rotations/offsets, same
-// ThumbnailView cards, same files) — so the suck-in literally builds the stack
-// the app shows, then hands off seamlessly to the real filled den underneath.
+// A faithful rebuild of the shipping compact den (ShelfView's `compactView`):
+// the same chrome, the same StackedFilesView fan (rotations [-8,-3,3] / offsets
+// [(-6,6),(-2,2),(0,0)]), the same ThumbnailView cards. As `director.denCount`
+// climbs 0→3 each card drops down into its slot and the dashed drop-target
+// gives way to the stack — so it builds exactly the way the real den does when
+// you drop files onto it, with no remount flicker and no empty-state showing
+// through the incoming files.
 
-private struct DropOverlay: View {
-    // The den's stack centre in the 360×640 design space.
-    private static let target = CGPoint(x: 180, y: 300)
-    // One flyer per delivery; each carries a distinct, real file thumbnail.
-    private static let urls: [URL] = (0..<3).map { ReelDemo.denFiles[$0] }
-    private static let starts: [CGPoint] = [
-        CGPoint(x: 300, y: -130),   // drops from the top-right
-        CGPoint(x: -100, y: 430),   // swoops in from the bottom-left
-        CGPoint(x: 470, y: 250),    // flies in from the right
+private struct DropDen: View {
+    let director: ReelDirector
+
+    // Landing order = the real den's draw order (back → middle → front/top),
+    // so the leading PDF lands last and sits on top, matching ShelfView's
+    // `StackedFilesView` for these same files.
+    private static let cards: [(url: URL, dx: CGFloat, dy: CGFloat, rot: Double)] = [
+        (ReelDemo.denFiles[2], -6, 6, -8),   // back  — Release Notes.md
+        (ReelDemo.denFiles[1], -2, 2, -3),   // middle — Contract.docx
+        (ReelDemo.denFiles[0],  0, 0,  3),   // front — Q3 Report.pdf
     ]
-    private static let spin: [Double] = [-26, 22, 16]
-    private static let land: [Double] = [4, -3, 6]   // tiny settle angle
-    // Lands at 1.45 / 1.95 / 2.45 s (dropActive fires at 0.9; flight ≈ 0.55 s).
-    private static let delays: [Double] = [0.0, 0.5, 1.0]
 
     var body: some View {
+        let count = director.denCount
         ZStack {
-            ForEach(0..<3, id: \.self) { i in
-                FlyingFile(
-                    url: Self.urls[i],
-                    start: Self.starts[i],
-                    end: Self.target,
-                    startSpin: Self.spin[i],
-                    landRotation: Self.land[i],
-                    delay: Self.delays[i]
-                )
-                .zIndex(Double(i))
+            // Match ShelfView's body fill so the tone is identical to the
+            // expanded stages it whip-cuts to.
+            RoundedRectangle(cornerRadius: 24).fill(.ultraThinMaterial)
+            RoundedRectangle(cornerRadius: 24).fill(Color.white.opacity(0.03))
+
+            DropTarget()
+                .opacity(count == 0 ? 1 : 0)
+                .scaleEffect(count == 0 ? 1 : 1.12)
+                .animation(.easeOut(duration: 0.3), value: count == 0)
+
+            ForEach(Array(Self.cards.enumerated()), id: \.offset) { i, c in
+                DropCard(url: c.url, dx: c.dx, dy: c.dy, rot: c.rot, landed: count > i)
+                    .zIndex(Double(i))
             }
+
+            chrome(count: count)
         }
-        .frame(width: 360, height: 640)
+        .frame(width: 200, height: 200)
+        .environment(\.colorScheme, .dark)
+    }
+
+    // ×/＋ top, ✨ · wand bottom-left, ⋯ bottom-right, "N Files" centred — the
+    // shipping compact den's controls, rendered as static visuals.
+    @ViewBuilder
+    private func chrome(count: Int) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                glyph("xmark", size: 30, font: 12)
+                Spacer()
+                glyph("plus", size: 30, font: 14)
+            }
+            .padding(.horizontal, 12).padding(.top, 12)
+            Spacer()
+            HStack(spacing: 8) {
+                glyph("sparkles", size: 28, font: 13, tint: Reel.accentA)
+                glyph("wand.and.stars", size: 28, font: 13, tint: Reel.accentA)
+                Spacer()
+                glyph("ellipsis", size: 28, font: 13)
+            }
+            .padding(.horizontal, 10).padding(.bottom, 8)
+        }
+        .frame(width: 200, height: 200)
+
+        Text("\(ReelDemo.denFiles.count) Files")
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.secondary)
+            .opacity(count >= 3 ? 1 : 0)
+            .animation(.easeIn(duration: 0.25), value: count >= 3)
+            .frame(width: 200, height: 200, alignment: .bottom)
+            .padding(.bottom, 15)
+    }
+
+    private func glyph(_ symbol: String, size: CGFloat, font: CGFloat,
+                       tint: Color = .secondary) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: font, weight: .semibold))
+            .foregroundStyle(tint)
+            .frame(width: size, height: size)
+            .background(.regularMaterial, in: Circle())
     }
 }
 
-private struct FlyingFile: View {
+/// The empty den's drop-target: the app's dashed well plus a soft, breathing
+/// accent ring that invites a drop — without the harsh full-card blue border.
+private struct DropTarget: View {
+    @State private var breathe = false
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(Reel.accentA.opacity(breathe ? 0.40 : 0.14), lineWidth: 2)
+                .frame(width: 122, height: 122)
+                .blur(radius: 6)
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(Color.secondary.opacity(0.30),
+                              style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                .frame(width: 120, height: 120)
+            Image(systemName: "arrow.down.to.line")
+                .font(.system(size: 26, weight: .light))
+                .foregroundStyle(.secondary.opacity(0.30))
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
+                breathe = true
+            }
+        }
+    }
+}
+
+/// One stacked file card. Pre-landing it sits just above the den (clipped away
+/// by the StageCard); when `landed` flips it springs down into its fan slot —
+/// reading as a file dropped onto the den.
+///
+/// Renders the crisp file-type icon directly (not ThumbnailView): the demo files
+/// are empty, so QuickLook would thumbnail them as blank white pages — the type
+/// icon is the clean, instantly-correct card the real den shows for these types.
+private struct DropCard: View {
     let url: URL
-    let start: CGPoint
-    let end: CGPoint
-    let startSpin: Double
-    let landRotation: Double
-    let delay: Double
-    @State private var arrived = false
-    @State private var gone = false
+    let dx: CGFloat
+    let dy: CGFloat
+    let rot: Double
+    let landed: Bool
+
+    private let nudgeY: CGFloat = -4   // the stack rides a touch above centre
 
     var body: some View {
-        // The same card the real StackedFilesView draws, so as it fades the den's
-        // real stack (growing underneath) takes its place seamlessly.
-        ThumbnailView(url: url, size: CGSize(width: 140, height: 172), contentMode: .fill)
-            .frame(width: 72, height: 88)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .shadow(color: .black.opacity(0.5), radius: 12, y: 6)
-            .shadow(color: Reel.accentA.opacity(gone ? 0 : 0.55), radius: 16)
-            .rotationEffect(.degrees(arrived ? landRotation : startSpin))
-            .scaleEffect(arrived ? (gone ? 0.85 : 1.0) : 1.35)
-            .opacity(gone ? 0 : 1)                       // stays opaque the whole flight…
-            .position(arrived ? end : start)
-            .onAppear {
-                // …then fades only once it lands, as the real stack card appears.
-                withAnimation(.spring(response: 0.55, dampingFraction: 0.7).delay(delay)) {
-                    arrived = true
-                } completion: {
-                    withAnimation(.easeIn(duration: 0.2)) { gone = true }
-                }
-            }
+        Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+            .resizable()
+            .interpolation(.high)
+            .aspectRatio(contentMode: .fit)
+            .frame(width: 78, height: 94)
+            // No shadow while parked above the den — otherwise the blur bleeds
+            // past the clip edge and you see a file's shadow before it drops in.
+            .shadow(color: .black.opacity(landed ? 0.45 : 0), radius: landed ? 8 : 0,
+                    x: 0, y: landed ? 5 : 0)
+            .rotationEffect(.degrees(landed ? rot : rot - 12))
+            .scaleEffect(landed ? 1 : 1.12)
+            .offset(x: dx, y: nudgeY + (landed ? dy : dy - 150))
     }
 }
 

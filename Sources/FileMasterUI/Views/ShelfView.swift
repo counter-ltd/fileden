@@ -87,6 +87,49 @@ struct ShelfView: View {
     /// Size when the embedded preview is open: files + preview pane (no controls).
     private let previewSize = CGSize(width: 1000, height: 660)
 
+    /// Seed `items` and the initial view-state at init (not in `onAppear`) so a
+    /// freshly-created `ShelfView` renders populated on its very first frame —
+    /// otherwise it shows an empty drop-zone for a frame before `onAppear` runs,
+    /// which flickers when the view is re-created (e.g. a den whose contents
+    /// grow). All parameters keep their previous defaults, so callers are
+    /// unchanged; `onAppear` still re-applies these idempotently.
+    init(
+        onClose: (() -> Void)? = nil,
+        onResize: ((CGSize) -> Void)? = nil,
+        onEmpty: ((@escaping () -> Void) -> Void)? = nil,
+        onItemsReceived: (() -> Void)? = nil,
+        onItemsChanged: ((Bool) -> Void)? = nil,
+        onURLsChanged: (([URL]) -> Void)? = nil,
+        onAskModeChanged: ((Bool) -> Void)? = nil,
+        initialURLs: [URL] = [],
+        initiallyExpanded: Bool = false,
+        initiallyTargeted: Bool = false,
+        initialViewMode: ExpandedViewMode = .grid,
+        initiallyEditingURL: URL? = nil
+    ) {
+        self.onClose = onClose
+        self.onResize = onResize
+        self.onEmpty = onEmpty
+        self.onItemsReceived = onItemsReceived
+        self.onItemsChanged = onItemsChanged
+        self.onURLsChanged = onURLsChanged
+        self.onAskModeChanged = onAskModeChanged
+        self.initialURLs = initialURLs
+        self.initiallyExpanded = initiallyExpanded
+        self.initiallyTargeted = initiallyTargeted
+        self.initialViewMode = initialViewMode
+        self.initiallyEditingURL = initiallyEditingURL
+        _items = State(initialValue: initialURLs.map { ShelfItem(url: $0) })
+        _isExpanded = State(initialValue: initiallyExpanded)
+        _isTargeted = State(initialValue: initiallyTargeted)
+        _viewMode = State(initialValue: initialViewMode)
+        // When starting expanded, mark items already dealt — the deal-in
+        // animation is driven by the isExpanded false→true transition, which
+        // doesn't occur if we seed it true here, so without this the expanded
+        // grid/list would render its items at opacity 0 (empty).
+        _itemsDealt = State(initialValue: initiallyExpanded)
+    }
+
     /// The window size for the den's current mode.
     private var currentSize: CGSize {
         if isEditing { return editSize }
